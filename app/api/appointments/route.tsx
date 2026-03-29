@@ -1,0 +1,149 @@
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { staffId, appointmentDate, duration, reason } = body
+
+    if (!staffId || !appointmentDate || !reason) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
+
+    // Only patients can book appointments
+    if (session.user.role !== 'PATIENT') {
+      return NextResponse.json(
+        { error: 'Only patients can book appointments' },
+        { status: 403 }
+      )
+    }
+
+    // Get patient record
+    const patient = await prisma.patient.findUnique({
+      where: { userId: session.user.id as string },
+    })
+
+    if (!patient) {
+      return NextResponse.json(
+        { error: 'Patient record not found' },
+        { status: 404 }
+      )
+    }
+
+    const newStart = new Date(appointmentDate)
+    const newEnd = new Date(newStart.getTime() + (duration || 30) * 60 * 1000)
+
+    // Find any SCHEDULED appointments that overlap with the requested slot.
+    // An overlap occurs when: existing.start < newEnd AND existing.end > newStart
+    const overlappingAppointments = await prisma.appointment.findMany({
+      where: {
+        status: 'SCHEDULED',
+        OR: [
+          { staffId },
+          { patientId: patient.id },
+        ],
+        AND: [
+          { appointmentDate: { lt: newEnd } },
+        ],
+      },
+      select: {
+        id: true,
+        staffId: true,
+        patientId: true,
+        appointmentDate: true,
+        duration: true,
+      },
+    })
+
+    // Prisma can't compute existing end time in a where clause,
+    // so we do the second half of the overlap check in JS
+    const conflicts = overlappingAppointments.filter((apt) => {
+      const existingEnd = new Date(
+        apt.appointmentDate.getTime() + apt.duration * 60 * 1000
+      )
+      return existingEnd > newStart
+    })
+
+    const staffConflict = conflicts.find((apt) => apt.staffId === staffId)
+    const patientConflict = conflicts.find((apt) => apt.patientId === patient.id)
+
+    if (staffConflict) {
+      return NextResponse.json(
+        { error: 'The selected doctor is not available at this time. Please choose a different time slot.' },
+        { status: 409 }
+      )
+    }
+
+    if (patientConflict) {
+      return NextResponse.json(
+        { error: 'You already have an appointment scheduled during this time.' },
+        { status: 409 }
+      )
+    }
+
+    // Create appointment
+    const appointment = await prisma.appointment.create({
+      data: {
+        patientId: patient.id,
+        staffId,
+        appointmentDate: newStart,
+        duration: duration || 30,
+        reason,
+      },
+      include: {
+        patient: {
+          include: {
+            user: true,
+          },
+        },
+        staff: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    })
+
+    return NextResponse.json(appointment, { status: 201 })
+  } catch (error) {
+    console.error('Error creating appointment:', error)
+    return NextResponse.json(
+      { error: 'Failed to create appointment' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const staff = await prisma.staff.findMany({
+      include: {
+        user: true,
+      },
+    })
+
+    return NextResponse.json(staff)
+  } catch (error) {
+    console.error('Error fetching staff:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch staff' },
+      { status: 500 }
+    )
+  }
+}

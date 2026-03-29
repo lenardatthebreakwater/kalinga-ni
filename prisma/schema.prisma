@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String     @default("PATIENT") // PATIENT, STAFF, or ADMIN
+  status    String     @default("ACTIVE")  // ACTIVE, SUSPENDED, BANNED, DELETED
+  phone     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  patient   Patient?
+  staff     Staff?
+}
+
+model Patient {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  dateOfBirth   DateTime?
+  gender        String?
+  bloodType     String?
+  allergies     String?
+  emergencyContact String?
+  emergencyPhone   String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  medicalRecords MedicalRecord[]
+  appointments   Appointment[]
+}
+
+model Staff {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  specialization String
+  licenseNumber  String?
+  department     String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  appointments  Appointment[]
+}
+
+model Appointment {
+  id        String     @id @default(cuid())
+  patientId String
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  staffId   String
+  staff     Staff      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  
+  appointmentDate DateTime
+  duration      Int      @default(30) // in minutes
+  reason        String
+  status        String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
+  notes         String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relation
+  medicalRecord MedicalRecord?
+
+  @@index([patientId])
+  @@index([staffId])
+}
+
+model MedicalRecord {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  appointmentId String?  @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  
+  diagnosis     String
+  treatment     String
+  medications   String?
+  notes         String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([patientId])
+}
+
+model ClinicSettings {
+  id              String   @id @default(cuid())
+  clinicName      String   @default("Kalinga-ni Clinic")
+  clinicEmail     String
+  clinicPhone     String
+  clinicAddress   String
+  clinicCity      String
+  clinicZipCode   String
+  operatingHours  String   // JSON or formatted string
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

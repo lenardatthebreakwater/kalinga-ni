@@ -32,7 +32,7 @@ export default function Home() {
               Contact
             </a>
           </div>
-          <NavbarButtons />
+          {/*<NavbarButtons */}
         </div>
       </nav>
 
@@ -323,7 +323,7 @@ export default function Home() {
 }
 
 async function NavbarButtons() {
-  const session = await auth()
+  const session = auth()
 
   if (session?.user) {
     return (
@@ -352,7 +352,7 @@ async function NavbarButtons() {
 }
 
 async function HeroButtons() {
-  const session = await auth()
+  const session = auth()
 
   if (session?.user) {
     return (

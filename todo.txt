@@ -1,0 +1,40 @@
+A. Patient Dashboard:
+	1. settings
+		- profile includes pfp and profile edit
+		- password reset
+		- account deletion
+		- notification options
+		- language options
+		- privacy policy
+		- terms and conditions
+		- theme
+	
+	2. general announcements (read - should show who made the announcement)
+		
+	3. Update how patient appoints time instead of choosing time slot for an appointment on his/her own. The patient will be given the schedule of the staff doctors. Its what the staff sets
+
+B. Staff Dashboard
+	1. settings
+		- profile includes pfp and profile edit
+		- password reset
+		- account deletion
+		- notification options
+		- language options
+		- privacy policy
+		- terms and conditions
+		- theme
+
+	2. general announcements (read - should show who made the announcement and write)
+	
+	3. Can edit her/his schedule each week? Day and time he or she is available 	
+
+	4. Rearranged how the data is viewed. The medical records of each patient tab should be accessible within the patients tab by clicking on the patient similar to the patients dashboard in admin panel
+	
+C. Admin Dashboard
+	1. Settings
+		What do you recommend to include in the admin dashboard's settings
+	
+	2. general announcements (read (should show who made the announcement) and write)
+
+	3. In the Users tab please give the actions text and not just icons so the admin immediately know what he's going to do
+	

@@ -20,7 +20,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only patients can book appointments
     if (session.user.role !== 'PATIENT') {
       return NextResponse.json(
         { error: 'Only patients can book appointments' },
@@ -28,7 +27,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get patient record
     const patient = await prisma.patient.findUnique({
       where: { userId: session.user.id as string },
     })
@@ -43,18 +41,50 @@ export async function POST(request: NextRequest) {
     const newStart = new Date(appointmentDate)
     const newEnd = new Date(newStart.getTime() + (duration || 30) * 60 * 1000)
 
-    // Find any SCHEDULED appointments that overlap with the requested slot.
-    // An overlap occurs when: existing.start < newEnd AND existing.end > newStart
+    // ✅ FIX: Use UTC methods to build the day boundary so it matches how
+    // dates are stored in the database (UTC midnight)
+    const y = newStart.getUTCFullYear()
+    const m = newStart.getUTCMonth()
+    const d = newStart.getUTCDate()
+    const slotDate = new Date(Date.UTC(y, m, d, 0, 0, 0, 0))
+    const nextDay = new Date(Date.UTC(y, m, d + 1, 0, 0, 0, 0))
+
+    // Verify the requested slot falls within a valid, available schedule window
+    const scheduleSlots = await prisma.staffSchedule.findMany({
+      where: {
+        staffId,
+        isAvailable: true,
+        date: { gte: slotDate, lt: nextDay },
+      },
+    })
+
+    // ✅ FIX: Use getUTCHours/getUTCMinutes so the comparison is done in the
+    // same timezone (UTC) as the stored "HH:mm" startTime/endTime strings
+    const slotStartMins = newStart.getUTCHours() * 60 + newStart.getUTCMinutes()
+    const slotEndMins = newEnd.getUTCHours() * 60 + newEnd.getUTCMinutes()
+
+    const withinSchedule = scheduleSlots.some((s) => {
+      const [sH, sM] = s.startTime.split(':').map(Number)
+      const [eH, eM] = s.endTime.split(':').map(Number)
+      return (
+        slotStartMins >= sH * 60 + sM &&
+        slotEndMins <= eH * 60 + eM
+      )
+    })
+
+    if (!withinSchedule) {
+      return NextResponse.json(
+        { error: "The selected time is outside of the doctor's available schedule." },
+        { status: 409 }
+      )
+    }
+
+    // Overlap check against existing appointments
     const overlappingAppointments = await prisma.appointment.findMany({
       where: {
         status: 'SCHEDULED',
-        OR: [
-          { staffId },
-          { patientId: patient.id },
-        ],
-        AND: [
-          { appointmentDate: { lt: newEnd } },
-        ],
+        OR: [{ staffId }, { patientId: patient.id }],
+        AND: [{ appointmentDate: { lt: newEnd } }],
       },
       select: {
         id: true,
@@ -65,8 +95,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Prisma can't compute existing end time in a where clause,
-    // so we do the second half of the overlap check in JS
     const conflicts = overlappingAppointments.filter((apt) => {
       const existingEnd = new Date(
         apt.appointmentDate.getTime() + apt.duration * 60 * 1000
@@ -79,7 +107,7 @@ export async function POST(request: NextRequest) {
 
     if (staffConflict) {
       return NextResponse.json(
-        { error: 'The selected doctor is not available at this time. Please choose a different time slot.' },
+        { error: 'This time slot has just been taken. Please choose another.' },
         { status: 409 }
       )
     }
@@ -91,7 +119,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create appointment
     const appointment = await prisma.appointment.create({
       data: {
         patientId: patient.id,
@@ -101,16 +128,8 @@ export async function POST(request: NextRequest) {
         reason,
       },
       include: {
-        patient: {
-          include: {
-            user: true,
-          },
-        },
-        staff: {
-          include: {
-            user: true,
-          },
-        },
+        patient: { include: { user: true } },
+        staff: { include: { user: true } },
       },
     })
 
@@ -124,6 +143,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// GET /api/appointments
+// Returns all staff with their upcoming available schedule dates
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -132,13 +153,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // ✅ FIX: Use UTC midnight so the filter boundary doesn't shift back a day
+    const now = new Date()
+    const todayUTC = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+    )
+
     const staff = await prisma.staff.findMany({
       include: {
         user: true,
+        schedules: {
+          where: {
+            isAvailable: true,
+            date: { gte: todayUTC },
+          },
+          orderBy: { date: 'asc' },
+        },
       },
     })
 
-    return NextResponse.json(staff)
+    // Only return staff that have at least one upcoming available slot
+    const staffWithSchedule = staff.filter((s) => s.schedules.length > 0)
+
+    return NextResponse.json(staffWithSchedule)
   } catch (error) {
     console.error('Error fetching staff:', error)
     return NextResponse.json(

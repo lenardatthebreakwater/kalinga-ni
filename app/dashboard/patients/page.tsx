@@ -5,14 +5,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Users, Phone, UserRound, Calendar, FileText,
   X, ChevronRight, AlertCircle, Stethoscope, Clock,
+  Search, Droplets,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
+import AddMedicalRecord from '@/components/appointments/add-medical-record'
 
 type Patient = {
   id: string
   userId: string
   dateOfBirth: string | null
   gender: string | null
+  bloodType: string | null
   createdAt: string
   user: {
     firstName: string
@@ -29,6 +32,7 @@ type Patient = {
 
 type Appointment = {
   id: string
+  patientId: string
   appointmentDate: string
   duration: number
   reason: string
@@ -54,14 +58,14 @@ type MedicalRecord = {
 
 const STATUS_COLORS: Record<string, string> = {
   SCHEDULED: 'bg-blue-100 text-blue-700',
-  COMPLETED: 'bg-green-100 text-green-700',
-  CANCELLED: 'bg-red-100 text-red-700',
-  NO_SHOW:   'bg-gray-100 text-gray-500',
+  COMPLETED:  'bg-green-100 text-green-700',
+  CANCELLED:  'bg-red-100 text-red-700',
+  NO_SHOW:    'bg-gray-100 text-gray-500',
 }
 
 export default function PatientsPage() {
   const { data: session } = useSession()
-  const role = (session?.user as any)?.role
+  const role = (session?.user as any)?.role as string | undefined
 
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,9 +78,7 @@ export default function PatientsPage() {
   const [records, setRecords] = useState<MedicalRecord[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
 
-  useEffect(() => {
-    fetchPatients()
-  }, [])
+  useEffect(() => { fetchPatients() }, [])
 
   async function fetchPatients() {
     setLoading(true)
@@ -102,6 +104,18 @@ export default function PatientsPage() {
     setSelected(null)
     setAppointments([])
     setRecords([])
+  }
+
+  // Refresh detail panel after adding a medical record
+  async function refreshDetail() {
+    if (!selected) return
+    const [aptRes, recRes] = await Promise.all([
+      fetch(`/api/admin/patients/${selected.id}/appointments`),
+      fetch(`/api/admin/patients/${selected.id}/records`),
+    ])
+    if (aptRes.ok) setAppointments(await aptRes.json())
+    if (recRes.ok) setRecords(await recRes.json())
+    fetchPatients()
   }
 
   const filtered = patients.filter(p =>
@@ -130,24 +144,26 @@ export default function PatientsPage() {
         <h1 className="text-2xl font-bold text-gray-800 mb-1">Patients</h1>
         <p className="text-gray-500 text-sm">
           {role === 'ADMIN'
-            ? 'Click a patient to view their appointments and medical records'
-            : 'Patients you have had appointments with'}
+            ? 'All registered patients — click to view appointments and records'
+            : 'Your patients — click to view their appointments and medical records'}
         </p>
       </div>
 
-      {/* Search (admin only) */}
-      {role === 'ADMIN' && (
-        <div className="mb-5">
+      {/* Search */}
+      <div className="mb-5">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search patients by name or email..."
+            placeholder="Search by name or email..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full max-w-sm px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2d7a2d]/30"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2d7a2d]/30"
           />
         </div>
-      )}
+      </div>
 
+      {/* Patient List */}
       {loading ? (
         <p className="text-gray-400 text-sm">Loading patients...</p>
       ) : filtered.length === 0 ? (
@@ -162,10 +178,10 @@ export default function PatientsPage() {
           {filtered.map(patient => (
             <div
               key={patient.id}
-              onClick={() => role === 'ADMIN' ? openPatient(patient) : undefined}
-              className={`bg-white rounded-2xl shadow-sm border-0 overflow-hidden transition ${
-                role === 'ADMIN' ? 'cursor-pointer hover:shadow-md' : ''
-              } ${selected?.id === patient.id ? 'ring-2 ring-[#2d7a2d]' : ''}`}
+              onClick={() => openPatient(patient)}
+              className={`bg-white rounded-2xl shadow-sm border-0 overflow-hidden transition cursor-pointer hover:shadow-md ${
+                selected?.id === patient.id ? 'ring-2 ring-[#2d7a2d]' : ''
+              }`}
             >
               <div className="h-1.5 bg-[#2d7a2d]" />
               <div className="p-5">
@@ -191,20 +207,14 @@ export default function PatientsPage() {
                     <span className="text-xs px-2.5 py-1 rounded-full bg-[#2d7a2d]/10 text-[#2d7a2d] font-medium">
                       {patient._count.medicalRecords} Records
                     </span>
-                    {role === 'ADMIN' && (
-                      <ChevronRight className="h-4 w-4 text-gray-300 ml-1" />
-                    )}
+                    <ChevronRight className="h-4 w-4 text-gray-300 ml-1" />
                   </div>
                 </div>
 
                 {/* Info grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
-                    {
-                      icon: UserRound,
-                      label: 'Gender',
-                      value: patient.gender,
-                    },
+                    { icon: UserRound, label: 'Gender', value: patient.gender },
                     {
                       icon: Calendar,
                       label: 'Date of Birth',
@@ -214,18 +224,8 @@ export default function PatientsPage() {
                           })
                         : null,
                     },
-                    {
-                      icon: Phone,
-                      label: 'Phone',
-                      value: patient.user.phone,
-                    },
-                    {
-                      icon: Clock,
-                      label: 'Registered',
-                      value: new Date(patient.createdAt).toLocaleDateString('en-US', {
-                        year: 'numeric', month: 'short', day: 'numeric',
-                      }),
-                    },
+                    { icon: Phone, label: 'Phone', value: patient.user.phone },
+                    { icon: Droplets, label: 'Blood Type', value: patient.bloodType },
                   ].map(({ icon: Icon, label, value }) => (
                     <div key={label} className="flex items-center gap-2">
                       <Icon className="h-4 w-4 text-gray-300 flex-shrink-0" />
@@ -242,8 +242,8 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* Detail Slide-in Panel (Admin only) */}
-      {selected && role === 'ADMIN' && (
+      {/* Detail Slide-in Panel — now works for both STAFF and ADMIN */}
+      {selected && (
         <>
           {/* Backdrop */}
           <div
@@ -253,6 +253,7 @@ export default function PatientsPage() {
 
           {/* Panel */}
           <div className="fixed right-0 top-0 h-full w-full max-w-2xl z-50 bg-white shadow-2xl flex flex-col">
+
             {/* Panel Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
               <div className="flex items-center gap-3">
@@ -274,6 +275,36 @@ export default function PatientsPage() {
               >
                 <X className="h-5 w-5 text-gray-400" />
               </button>
+            </div>
+
+            {/* Patient quick-info strip */}
+            <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-4 text-xs text-gray-500">
+              {selected.gender && (
+                <span className="flex items-center gap-1">
+                  <UserRound className="h-3.5 w-3.5 text-gray-300" />
+                  {selected.gender}
+                </span>
+              )}
+              {selected.dateOfBirth && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-gray-300" />
+                  {new Date(selected.dateOfBirth).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                  })}
+                </span>
+              )}
+              {selected.bloodType && (
+                <span className="flex items-center gap-1">
+                  <Droplets className="h-3.5 w-3.5 text-gray-300" />
+                  {selected.bloodType}
+                </span>
+              )}
+              {selected.user.phone && (
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5 text-gray-300" />
+                  {selected.user.phone}
+                </span>
+              )}
             </div>
 
             {/* Tabs */}
@@ -345,17 +376,37 @@ export default function PatientsPage() {
                             {apt.status}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600 mb-1">{apt.reason}</p>
-                        <div className="flex items-center gap-1.5 mt-2">
-                          <Stethoscope className="h-3.5 w-3.5 text-gray-300" />
-                          <p className="text-xs text-gray-400">
-                            Dr. {apt.staff.user.firstName} {apt.staff.user.lastName}
-                          </p>
-                          {apt.medicalRecord && (
-                            <span className="ml-2 text-xs text-[#2d7a2d] font-medium">
-                              ✓ Has record
-                            </span>
-                          )}
+
+                        <p className="text-sm text-gray-600 mb-2">{apt.reason}</p>
+
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Stethoscope className="h-3.5 w-3.5 text-gray-300" />
+                            <p className="text-xs text-gray-400">
+                              Dr. {apt.staff.user.firstName} {apt.staff.user.lastName}
+                            </p>
+                            {apt.medicalRecord && (
+                              <span className="ml-2 text-xs text-[#2d7a2d] font-medium">
+                                ✔ Has record
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Staff can add medical record directly from this panel */}
+                          {role === 'STAFF' &&
+                            apt.status === 'COMPLETED' &&
+                            !apt.medicalRecord && (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <AddMedicalRecord
+                                  appointmentId={apt.id}
+                                  patientId={apt.patientId}
+                                  patientName={`${selected.user.firstName} ${selected.user.lastName}`}
+                                  appointmentDate={new Date(apt.appointmentDate)}
+                                  reason={apt.reason}
+                                  onSuccess={refreshDetail}
+                                />
+                              </div>
+                            )}
                         </div>
                       </div>
                     ))}
@@ -375,7 +426,7 @@ export default function PatientsPage() {
                         <div className="p-4">
                           <div className="flex items-start justify-between mb-3">
                             <p className="font-semibold text-gray-800">{rec.diagnosis}</p>
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-gray-400 flex-shrink-0 ml-2">
                               {new Date(rec.createdAt).toLocaleDateString('en-US', {
                                 year: 'numeric', month: 'short', day: 'numeric',
                               })}

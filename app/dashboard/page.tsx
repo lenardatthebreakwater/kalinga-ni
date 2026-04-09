@@ -186,7 +186,7 @@ export default async function DashboardPage() {
       <div className="p-8 bg-gray-50 min-h-screen">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">
-            Welcome back, {session.user.name?.split(' ')[0]} 👋
+            Welcome back, {session.user.name?.split(' ')[0]}
           </h1>
           <p className="text-gray-500 mt-1">Here&apos;s an overview of your health information</p>
         </div>
@@ -305,7 +305,7 @@ export default async function DashboardPage() {
       <div className="p-8 bg-gray-50 min-h-screen">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">
-            Welcome, Dr. {session.user.name?.split(' ')[0]} 👋
+            Welcome, Dr. {session.user.name?.split(' ')[0]}
           </h1>
           <p className="text-gray-500 mt-1">Manage your patients and appointments</p>
         </div>

@@ -16,7 +16,6 @@ export async function PATCH(
     const body = await request.json()
     const { status, notes } = body
 
-    // ✅ FIX: params is a Promise in Next.js 15+ and must be awaited
     const { id: appointmentId } = await params
 
     if (!status) {
@@ -42,11 +41,12 @@ export async function PATCH(
       )
     }
 
-    // Check authorization - only the staff or patient in the appointment can update it
+    // ✅ FIX: appointment.staffId is Staff.id, not User.id
+    // Compare against appointment.staff.userId instead
     const isAuthorized =
-      session.user.id === appointment.staffId ||
+      session.user.role === 'ADMIN' ||
       session.user.id === appointment.patient.userId ||
-      session.user.role === 'ADMIN'
+      (session.user.role === 'STAFF' && session.user.id === appointment.staff.userId)
 
     if (!isAuthorized) {
       return NextResponse.json(

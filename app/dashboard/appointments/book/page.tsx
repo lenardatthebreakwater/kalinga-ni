@@ -4,252 +4,494 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertCircle, CheckCircle, Loader2, CalendarCheck } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { AlertCircle, CalendarCheck, Loader2, User, Calendar, Clock, ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+interface ScheduleSlot {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  slotDuration: number
+}
 
 interface Staff {
   id: string
-  user: {
-    firstName: string
-    lastName: string
-  }
+  user: { firstName: string; lastName: string; email: string }
   specialization: string
-  department: string
+  department: string | null
+  schedules: ScheduleSlot[]
 }
+
+interface TimeSlot {
+  time: string
+  datetime: string
+  available: boolean
+  scheduleId: string
+}
+
+type Step = 'doctor' | 'date' | 'time' | 'reason'
 
 export default function BookAppointmentPage() {
   const router = useRouter()
+
+  const [step, setStep] = useState<Step>('doctor')
   const [staff, setStaff] = useState<Staff[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loadingStaff, setLoadingStaff] = useState(true)
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
-  const [formData, setFormData] = useState({
-    staffId: '',
-    appointmentDate: '',
-    appointmentTime: '',
-    duration: '30',
-    reason: '',
-  })
+  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null)
+  const [selectedDate, setSelectedDate] = useState<string>('')      // 'yyyy-mm-dd'
+  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
+  const [reason, setReason] = useState('')
 
+  // Load staff with available schedules
   useEffect(() => {
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/appointments')
+        if (!res.ok) throw new Error('Failed to fetch doctors')
+        const data = await res.json()
+        setStaff(data)
+      } catch {
+        setError('Failed to load available doctors. Please try again.')
+      } finally {
+        setLoadingStaff(false)
+      }
+    }
     fetchStaff()
   }, [])
 
-  const fetchStaff = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/appointments')
-      if (!response.ok) throw new Error('Failed to fetch staff')
-      const data = await response.json()
-      setStaff(data)
-    } catch (err) {
-      setError('Failed to load available doctors')
-      console.error(err)
-    } finally {
-      setLoading(false)
+  // Load time slots when a date is selected
+  useEffect(() => {
+    if (!selectedStaff || !selectedDate) return
+    const fetchSlots = async () => {
+      setLoadingSlots(true)
+      setTimeSlots([])
+      setSelectedSlot(null)
+      try {
+        const res = await fetch(
+          `/api/schedule/slots?staffId=${selectedStaff.id}&date=${selectedDate}`
+        )
+        if (!res.ok) throw new Error('Failed to fetch slots')
+        const data = await res.json()
+        setTimeSlots(data)
+      } catch {
+        setError('Failed to load time slots. Please try again.')
+      } finally {
+        setLoadingSlots(false)
+      }
     }
-  }
+    fetchSlots()
+  }, [selectedStaff, selectedDate])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
+  // Get unique available dates for the selected staff
+  const availableDates = selectedStaff
+    ? selectedStaff.schedules.map((s) => s.date.split('T')[0])
+    : []
 
-    if (!formData.staffId || !formData.appointmentDate || !formData.appointmentTime || !formData.reason) {
-      setError('Please fill in all required fields')
+  const handleSubmit = async () => {
+    if (!selectedStaff || !selectedSlot || !reason.trim()) {
+      setError('Please complete all steps before booking.')
       return
     }
+    setError('')
+    setSubmitting(true)
 
     try {
-      setSubmitting(true)
-
-      const appointmentDateTime = new Date(`${formData.appointmentDate}T${formData.appointmentTime}`)
-
-      const response = await fetch('/api/appointments', {
+      const res = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          staffId: formData.staffId,
-          appointmentDate: appointmentDateTime,
-          duration: parseInt(formData.duration),
-          reason: formData.reason,
+          staffId: selectedStaff.id,
+          appointmentDate: selectedSlot.datetime,
+          duration: selectedStaff.schedules.find(
+            (s) => s.id === selectedSlot.scheduleId
+          )?.slotDuration ?? 30,
+          reason: reason.trim(),
         }),
       })
 
-      if (!response.ok) {
-        const data = await response.json()
+      if (!res.ok) {
+        const data = await res.json()
         throw new Error(data.error || 'Failed to book appointment')
       }
 
-      // Show success overlay, then redirect
       setSuccess(true)
-      setTimeout(() => {
-        router.push('/dashboard/appointments')
-      }, 1500)
+      setTimeout(() => router.push('/dashboard/appointments'), 1800)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to book appointment')
       setSubmitting(false)
     }
   }
 
-  if (loading) {
+  const steps: { key: Step; label: string; icon: typeof User }[] = [
+    { key: 'doctor', label: 'Doctor', icon: User },
+    { key: 'date', label: 'Date', icon: Calendar },
+    { key: 'time', label: 'Time', icon: Clock },
+    { key: 'reason', label: 'Reason', icon: CalendarCheck },
+  ]
+
+  const stepIndex = steps.findIndex((s) => s.key === step)
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00')
+    return d.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    })
+  }
+
+  const formatTime = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number)
+    const period = h >= 12 ? 'PM' : 'AM'
+    const hour = h % 12 === 0 ? 12 : h % 12
+    return `${hour}:${String(m).padStart(2, '0')} ${period}`
+  }
+
+  if (success) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="rounded-full bg-green-100 p-5">
+            <CalendarCheck className="h-12 w-12 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-foreground">Appointment Booked!</h2>
+          <p className="text-foreground/60">Redirecting you to your appointments...</p>
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mt-2" />
+        </div>
       </div>
     )
   }
 
   return (
-    <>
-      {/* Full-screen overlay shown after successful booking */}
-      {success && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="rounded-full bg-green-100 p-5">
-              <CalendarCheck className="h-12 w-12 text-green-600" />
-            </div>
-            <h2 className="text-2xl font-bold text-foreground">Appointment Booked!</h2>
-            <p className="text-foreground/60">Redirecting you to your appointments...</p>
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mt-2" />
-          </div>
-        </div>
-      )}
-
-      <div className="p-8 max-w-2xl mx-auto">
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <div className="max-w-2xl mx-auto">
+        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Book an Appointment</h1>
-          <p className="text-foreground/70">Schedule a new appointment with one of our medical professionals</p>
+          <h1 className="text-2xl font-bold text-gray-800 mb-1">Book an Appointment</h1>
+          <p className="text-gray-500 text-sm">
+            Schedule with one of our available doctors
+          </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Appointment Details</CardTitle>
-            <CardDescription>Fill in your appointment information</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800">{error}</p>
+        {/* Step Indicator */}
+        <div className="flex items-center mb-8">
+          {steps.map((s, i) => {
+            const Icon = s.icon
+            const isCompleted = i < stepIndex
+            const isCurrent = i === stepIndex
+            return (
+              <div key={s.key} className="flex items-center flex-1 last:flex-none">
+                <div className="flex flex-col items-center">
+                  <div
+                    className={cn(
+                      'h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors',
+                      isCompleted
+                        ? 'bg-[#2d7a2d] text-white'
+                        : isCurrent
+                        ? 'bg-[#2d7a2d]/10 text-[#2d7a2d] ring-2 ring-[#2d7a2d]'
+                        : 'bg-gray-100 text-gray-400'
+                    )}
+                  >
+                    {isCompleted ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <Icon className="h-4 w-4" />
+                    )}
+                  </div>
+                  <span className={cn(
+                    'text-xs mt-1 font-medium',
+                    isCurrent ? 'text-[#2d7a2d]' : isCompleted ? 'text-gray-600' : 'text-gray-400'
+                  )}>
+                    {s.label}
+                  </span>
+                </div>
+                {i < steps.length - 1 && (
+                  <div className={cn(
+                    'flex-1 h-0.5 mx-2 mb-4 rounded',
+                    i < stepIndex ? 'bg-[#2d7a2d]' : 'bg-gray-200'
+                  )} />
+                )}
               </div>
+            )
+          })}
+        </div>
+
+        {/* Summary bar */}
+        {(selectedStaff || selectedDate || selectedSlot) && (
+          <div className="mb-4 p-3 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-wrap gap-3 text-sm text-gray-600">
+            {selectedStaff && (
+              <span className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5 text-[#2d7a2d]" />
+                <span className="font-medium text-gray-800">
+                  Dr. {selectedStaff.user.firstName} {selectedStaff.user.lastName}
+                </span>
+              </span>
             )}
+            {selectedDate && (
+              <>
+                <ChevronRight className="h-4 w-4 text-gray-300" />
+                <span className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-[#2d7a2d]" />
+                  {formatDate(selectedDate)}
+                </span>
+              </>
+            )}
+            {selectedSlot && (
+              <>
+                <ChevronRight className="h-4 w-4 text-gray-300" />
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-[#2d7a2d]" />
+                  {formatTime(selectedSlot.time)}
+                </span>
+              </>
+            )}
+          </div>
+        )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="staffId" className="font-semibold">
-                  Select Doctor <span className="text-red-500">*</span>
-                </Label>
-                <Select value={formData.staffId} onValueChange={(value) => setFormData({ ...formData, staffId: value })}>
-                  <SelectTrigger id="staffId">
-                    <SelectValue placeholder="Choose a doctor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {staff.map((doctor) => (
-                      <SelectItem key={doctor.id} value={doctor.id}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">
-                            Dr. {doctor.user.firstName} {doctor.user.lastName}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-red-800">{error}</p>
+          </div>
+        )}
+
+        {/* STEP 1 — Choose Doctor */}
+        {step === 'doctor' && (
+          <Card className="border-0 shadow-sm rounded-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-gray-800">Choose a Doctor</CardTitle>
+              <CardDescription>Only doctors with available schedules are shown</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingStaff ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#2d7a2d]" />
+                </div>
+              ) : staff.length === 0 ? (
+                <div className="text-center py-10">
+                  <Calendar className="h-10 w-10 text-gray-200 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">No doctors have set their schedule yet.</p>
+                  <p className="text-gray-300 text-xs mt-1">Please check back later.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {staff.map((doctor) => (
+                    <button
+                      key={doctor.id}
+                      onClick={() => {
+                        setSelectedStaff(doctor)
+                        setSelectedDate('')
+                        setSelectedSlot(null)
+                        setStep('date')
+                        setError('')
+                      }}
+                      className="w-full text-left p-4 rounded-xl border border-gray-100 hover:border-[#2d7a2d] hover:bg-[#2d7a2d]/5 transition group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-bold text-[#2d7a2d]">
+                            {doctor.user.firstName[0]}
                           </span>
-                          <span className="text-xs text-muted-foreground">{doctor.specialization}</span>
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="appointmentDate" className="font-semibold">
-                    Appointment Date <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="appointmentDate"
-                    type="date"
-                    value={formData.appointmentDate}
-                    onChange={(e) => setFormData({ ...formData, appointmentDate: e.target.value })}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="bg-background border-border"
-                  />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-800 text-sm">
+                            Dr. {doctor.user.firstName} {doctor.user.lastName}
+                          </p>
+                          <p className="text-xs text-gray-500">{doctor.specialization}</p>
+                          {doctor.department && (
+                            <p className="text-xs text-gray-400">{doctor.department}</p>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs text-[#2d7a2d] font-medium">
+                            {doctor.schedules.length} available day{doctor.schedules.length !== 1 ? 's' : ''}
+                          </p>
+                          <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-[#2d7a2d] ml-auto mt-1 transition" />
+                        </div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="appointmentTime" className="font-semibold">
-                    Appointment Time <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="appointmentTime"
-                    type="time"
-                    value={formData.appointmentTime}
-                    onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
-                    className="bg-background border-border"
-                  />
+        {/* STEP 2 — Choose Date */}
+        {step === 'date' && selectedStaff && (
+          <Card className="border-0 shadow-sm rounded-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-gray-800">Choose a Date</CardTitle>
+              <CardDescription>
+                Available dates for Dr. {selectedStaff.user.firstName} {selectedStaff.user.lastName}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                {availableDates.map((dateStr) => {
+                  const d = new Date(dateStr + 'T00:00:00')
+                  const isSelected = selectedDate === dateStr
+                  return (
+                    <button
+                      key={dateStr}
+                      onClick={() => {
+                        setSelectedDate(dateStr)
+                        setSelectedSlot(null)
+                        setError('')
+                      }}
+                      className={cn(
+                        'p-3 rounded-xl border text-left transition',
+                        isSelected
+                          ? 'bg-[#2d7a2d] border-[#2d7a2d] text-white'
+                          : 'border-gray-100 hover:border-[#2d7a2d] hover:bg-[#2d7a2d]/5'
+                      )}
+                    >
+                      <p className={cn('text-xs font-medium', isSelected ? 'text-white/80' : 'text-gray-400')}>
+                        {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                      </p>
+                      <p className={cn('text-base font-bold', isSelected ? 'text-white' : 'text-gray-800')}>
+                        {d.getDate()}
+                      </p>
+                      <p className={cn('text-xs', isSelected ? 'text-white/80' : 'text-gray-400')}>
+                        {d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                      </p>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => { setStep('doctor'); setSelectedStaff(null) }}
+                  className="rounded-xl border-gray-200"
+                >
+                  Back
+                </Button>
+                <Button
+                  disabled={!selectedDate}
+                  onClick={() => { setStep('time'); setError('') }}
+                  className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl"
+                >
+                  Continue
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* STEP 3 — Choose Time Slot */}
+        {step === 'time' && selectedStaff && selectedDate && (
+          <Card className="border-0 shadow-sm rounded-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-gray-800">Choose a Time</CardTitle>
+              <CardDescription>{formatDate(selectedDate)}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingSlots ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#2d7a2d]" />
                 </div>
-              </div>
+              ) : timeSlots.length === 0 ? (
+                <div className="text-center py-10">
+                  <Clock className="h-10 w-10 text-gray-200 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">No available slots for this date.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-6">
+                  {timeSlots.map((slot) => {
+                    const isSelected = selectedSlot?.time === slot.time
+                    return (
+                      <button
+                        key={slot.datetime}
+                        disabled={!slot.available}
+                        onClick={() => { setSelectedSlot(slot); setError('') }}
+                        className={cn(
+                          'py-2.5 px-3 rounded-xl border text-sm font-medium transition',
+                          isSelected
+                            ? 'bg-[#2d7a2d] border-[#2d7a2d] text-white'
+                            : slot.available
+                            ? 'border-gray-100 hover:border-[#2d7a2d] hover:bg-[#2d7a2d]/5 text-gray-700'
+                            : 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed line-through'
+                        )}
+                      >
+                        {formatTime(slot.time)}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="duration" className="font-semibold">
-                  Duration (minutes)
-                </Label>
-                <Select value={formData.duration} onValueChange={(value) => setFormData({ ...formData, duration: value })}>
-                  <SelectTrigger id="duration">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="15">15 minutes</SelectItem>
-                    <SelectItem value="30">30 minutes</SelectItem>
-                    <SelectItem value="45">45 minutes</SelectItem>
-                    <SelectItem value="60">1 hour</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => { setStep('date'); setSelectedSlot(null) }}
+                  className="rounded-xl border-gray-200"
+                >
+                  Back
+                </Button>
+                <Button
+                  disabled={!selectedSlot}
+                  onClick={() => { setStep('reason'); setError('') }}
+                  className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl"
+                >
+                  Continue
+                </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
 
-              <div className="space-y-2">
-                <Label htmlFor="reason" className="font-semibold">
-                  Reason for Visit <span className="text-red-500">*</span>
-                </Label>
+        {/* STEP 4 — Reason */}
+        {step === 'reason' && (
+          <Card className="border-0 shadow-sm rounded-2xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-gray-800">Reason for Visit</CardTitle>
+              <CardDescription>Briefly describe why you need this appointment</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 mb-6">
+                <Label htmlFor="reason">Reason <span className="text-red-500">*</span></Label>
                 <Textarea
                   id="reason"
-                  placeholder="Describe why you need this appointment"
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  className="bg-background border-border min-h-32"
+                  placeholder="e.g. Routine check-up, follow-up for fever, etc."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-32 resize-none"
                 />
               </div>
 
-              <div className="flex gap-4 pt-4">
+              <div className="flex gap-3">
                 <Button
-                  type="button"
                   variant="outline"
-                  onClick={() => router.back()}
+                  onClick={() => setStep('time')}
                   disabled={submitting}
+                  className="rounded-xl border-gray-200"
                 >
-                  Cancel
+                  Back
                 </Button>
                 <Button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex items-center gap-2"
+                  onClick={handleSubmit}
+                  disabled={submitting || !reason.trim()}
+                  className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl flex items-center gap-2"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {submitting ? 'Booking...' : 'Book Appointment'}
+                  {submitting ? 'Booking...' : 'Confirm Booking'}
                 </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
-    </>
+    </div>
   )
 }

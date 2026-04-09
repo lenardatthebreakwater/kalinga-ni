@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Users, AlertCircle, ShieldBan, ShieldOff, Trash2, KeyRound, ShieldCheck, Search } from 'lucide-react'
+import {
+  Users, ShieldBan, ShieldOff, Trash2, KeyRound,
+  ShieldCheck, Search,
+} from 'lucide-react'
 
 type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'DELETED'
 
@@ -38,7 +41,6 @@ export default function UsersPage() {
   const [filterRole, setFilterRole] = useState('ALL')
   const [filterStatus, setFilterStatus] = useState('ALL')
 
-  // Modal state
   const [modal, setModal] = useState<{
     type: 'suspend' | 'ban' | 'delete' | 'activate' | 'reset' | null
     user: User | null
@@ -47,17 +49,12 @@ export default function UsersPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null)
 
-  useEffect(() => {
-    fetchUsers()
-  }, [])
+  useEffect(() => { fetchUsers() }, [])
 
   async function fetchUsers() {
     setLoading(true)
     const res = await fetch('/api/admin/users')
-    if (res.ok) {
-      const data = await res.json()
-      setUsers(data)
-    }
+    if (res.ok) setUsers(await res.json())
     setLoading(false)
   }
 
@@ -66,11 +63,8 @@ export default function UsersPage() {
     setActionLoading(true)
     try {
       const actionMap = {
-        suspend: 'SUSPEND',
-        ban: 'BAN',
-        delete: 'DELETE',
-        activate: 'ACTIVATE',
-        reset: 'RESET_PASSWORD',
+        suspend: 'SUSPEND', ban: 'BAN', delete: 'DELETE',
+        activate: 'ACTIVATE', reset: 'RESET_PASSWORD',
       }
       const res = await fetch(`/api/admin/users/${modal.user.id}`, {
         method: 'PATCH',
@@ -99,15 +93,13 @@ export default function UsersPage() {
   }
 
   const filtered = users.filter(u => {
-    const matchSearch =
-      `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search.toLowerCase())
     const matchRole = filterRole === 'ALL' || u.role === filterRole
     const matchStatus = filterStatus === 'ALL' || u.status === filterStatus
     return matchSearch && matchRole && matchStatus
   })
 
-  const openModal = (type: typeof modal.type, user: User) =>
-    setModal({ type, user })
+  const openModal = (type: typeof modal.type, user: User) => setModal({ type, user })
 
   if (loading) {
     return (
@@ -215,49 +207,49 @@ export default function UsersPage() {
                     </td>
                     <td className="px-5 py-4">
                       {user.role !== 'ADMIN' && (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {user.status === 'ACTIVE' && (
                             <>
                               <button
                                 onClick={() => openModal('suspend', user)}
-                                title="Suspend"
-                                className="p-1.5 rounded-lg hover:bg-yellow-50 text-yellow-600 transition"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 transition"
                               >
-                                <ShieldOff className="h-4 w-4" />
+                                <ShieldOff className="h-3.5 w-3.5" />
+                                Suspend
                               </button>
                               <button
                                 onClick={() => openModal('ban', user)}
-                                title="Ban"
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition"
                               >
-                                <ShieldBan className="h-4 w-4" />
+                                <ShieldBan className="h-3.5 w-3.5" />
+                                Ban
                               </button>
                             </>
                           )}
                           {(user.status === 'SUSPENDED' || user.status === 'BANNED') && (
                             <button
                               onClick={() => openModal('activate', user)}
-                              title="Reactivate"
-                              className="p-1.5 rounded-lg hover:bg-green-50 text-[#2d7a2d] transition"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 transition"
                             >
-                              <ShieldCheck className="h-4 w-4" />
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              Reactivate
                             </button>
                           )}
                           {user.status !== 'DELETED' && (
                             <>
                               <button
                                 onClick={() => openModal('reset', user)}
-                                title="Reset Password"
-                                className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
                               >
-                                <KeyRound className="h-4 w-4" />
+                                <KeyRound className="h-3.5 w-3.5" />
+                                Reset Password
                               </button>
                               <button
                                 onClick={() => openModal('delete', user)}
-                                title="Delete"
-                                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
                               </button>
                             </>
                           )}
@@ -350,9 +342,9 @@ export default function UsersPage() {
               </Button>
               <Button
                 className={`flex-1 rounded-xl text-white ${
-                  modal.type === 'ban' ? 'bg-red-500 hover:bg-red-600' :
-                  modal.type === 'suspend' ? 'bg-yellow-500 hover:bg-yellow-600' :
-                  modal.type === 'delete' ? 'bg-gray-500 hover:bg-gray-600' :
+                  modal.type === 'ban'      ? 'bg-red-500 hover:bg-red-600' :
+                  modal.type === 'suspend'  ? 'bg-yellow-500 hover:bg-yellow-600' :
+                  modal.type === 'delete'   ? 'bg-gray-500 hover:bg-gray-600' :
                   modal.type === 'activate' ? 'bg-[#2d7a2d] hover:bg-[#245f24]' :
                   'bg-blue-500 hover:bg-blue-600'
                 }`}

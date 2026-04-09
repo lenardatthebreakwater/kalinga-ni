@@ -1,13 +1,61 @@
 'use client'
 
-import { auth } from '@/lib/auth'
-import { useEffect, useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSession, signOut } from 'next-auth/react'
+import { useTheme } from 'next-themes'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertCircle, Settings } from 'lucide-react'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  User, Lock, Globe, Moon, Sun, Monitor, Trash2, Camera,
+  AlertCircle, Check, Loader2, ShieldAlert, FileText, ChevronRight,
+  Building2, Bell,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface UserProfile {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string | null
+  image: string | null
+  role: string
+  createdAt: string
+  patient?: {
+    dateOfBirth: string | null
+    gender: string | null
+    bloodType: string | null
+    allergies: string | null
+    emergencyContact: string | null
+    emergencyPhone: string | null
+  }
+  staff?: {
+    specialization: string
+    licenseNumber: string | null
+    department: string | null
+  }
+}
+
+interface UserSettings {
+  theme: string
+  language: string
+  emailNotifications: boolean
+  phoneNotifications: boolean
+  appNotifications: boolean
+}
 
 interface ClinicSettings {
   id: string
@@ -20,201 +68,673 @@ interface ClinicSettings {
   operatingHours: string
 }
 
+interface AppointmentSettings {
+  id: string
+  cancellationWindowHours: number
+  maxAppointmentsPerDay: number
+  defaultSlotDuration: number
+  bookingsEnabled: boolean
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const LANGUAGES = [
+  { value: 'en',  label: 'English' },
+  { value: 'tl',  label: 'Filipino (Tagalog)' },
+  { value: 'ceb', label: 'Cebuano' },
+  { value: 'es',  label: 'Español' },
+]
+const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+const GENDERS     = ['Male', 'Female', 'Other', 'Prefer not to say']
+
+// ── Toggle ───────────────────────────────────────────────────────────────────
+
+function Toggle({ checked, onChange, disabled }: {
+  checked: boolean; onChange: (v: boolean) => void; disabled?: boolean
+}) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={checked} disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#2d7a2d] focus:ring-offset-2 disabled:opacity-50',
+        checked ? 'bg-[#2d7a2d]' : 'bg-gray-200'
+      )}
+    >
+      <span className={cn(
+        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+        checked ? 'translate-x-6' : 'translate-x-1'
+      )} />
+    </button>
+  )
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<ClinicSettings | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [unauthorized, setUnauthorized] = useState(false)
+  const { data: session, update: updateSession } = useSession()
+  const { theme, setTheme } = useTheme()
+  const role           = (session?.user as any)?.role as string | undefined
+  const isAdmin        = role === 'ADMIN'
+  const isPatientOrStaff = role === 'PATIENT' || role === 'STAFF'
+  const fileInputRef   = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const session = await (await import('next-auth')).auth()
-        if (!session?.user || session.user.role !== 'ADMIN') {
-          setUnauthorized(true)
-          return
-        }
-        setIsAdmin(true)
-        fetchSettings()
-      } catch (error) {
-        setUnauthorized(true)
-      }
-    }
+  const TABS = [
+    { key: 'profile',     label: 'Profile',     icon: User,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'security',    label: 'Security',    icon: Lock,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'preferences', label: 'Preferences', icon: Globe,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'clinic',      label: 'Clinic',      icon: Building2,   roles: ['ADMIN'] },
+    { key: 'danger',      label: 'Account',     icon: ShieldAlert, roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+  ].filter(t => role && t.roles.includes(role))
 
-    checkAuth()
-  }, [])
+  const [activeTab,     setActiveTab]     = useState('profile')
+  const [profile,       setProfile]       = useState<UserProfile | null>(null)
+  const [settings,      setSettings]      = useState<UserSettings | null>(null)
+  const [clinicSettings,setClinicSettings]= useState<ClinicSettings | null>(null)
+  const [apptSettings,  setApptSettings]  = useState<AppointmentSettings | null>(null)
+  const [loading,       setLoading]       = useState(true)
 
-  const fetchSettings = async () => {
+  const [profileForm, setProfileForm] = useState({
+    firstName: '', lastName: '', phone: '',
+    dateOfBirth: '', gender: '', bloodType: '', allergies: '',
+    emergencyContact: '', emergencyPhone: '',
+    specialization: '', licenseNumber: '', department: '',
+  })
+  const [avatarPreview,  setAvatarPreview]  = useState<string | null>(null)
+  const [avatarBase64,   setAvatarBase64]   = useState<string | null | undefined>(undefined)
+  const [savingProfile,  setSavingProfile]  = useState(false)
+
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '', newPassword: '', confirmPassword: '',
+  })
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [passwordError,  setPasswordError]  = useState('')
+
+  const [savingSettings, setSavingSettings] = useState(false)
+
+  const [clinicForm, setClinicForm] = useState({
+    clinicName: '', clinicEmail: '', clinicPhone: '',
+    clinicAddress: '', clinicCity: '', clinicZipCode: '', operatingHours: '',
+  })
+  const [savingClinic, setSavingClinic] = useState(false)
+
+  const [showDeleteDialog,   setShowDeleteDialog]   = useState(false)
+  const [deletePassword,     setDeletePassword]     = useState('')
+  const [deleteConfirmText,  setDeleteConfirmText]  = useState('')
+  const [deletingAccount,    setDeletingAccount]    = useState(false)
+  const [deleteError,        setDeleteError]        = useState('')
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
     try {
-      const response = await fetch('/api/settings')
-      const data = await response.json()
-      setSettings(data)
-    } catch (error) {
-      toast.error('Failed to load settings')
-    }
-  }
+      const requests: Promise<Response>[] = [fetch('/api/user/profile'), fetch('/api/user/settings')]
+      if (isAdmin) requests.push(fetch('/api/settings'))
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    if (settings) {
-      setSettings({
-        ...settings,
-        [name]: value,
+      const responses = await Promise.all(requests)
+      const [profileData, settingsData] = await Promise.all([responses[0].json(), responses[1].json()])
+
+      setProfile(profileData)
+      setSettings(settingsData)
+      setAvatarPreview(profileData.image ?? null)
+      setProfileForm({
+        firstName:        profileData.firstName ?? '',
+        lastName:         profileData.lastName ?? '',
+        phone:            profileData.phone ?? '',
+        dateOfBirth:      profileData.patient?.dateOfBirth?.split('T')[0] ?? '',
+        gender:           profileData.patient?.gender ?? '',
+        bloodType:        profileData.patient?.bloodType ?? '',
+        allergies:        profileData.patient?.allergies ?? '',
+        emergencyContact: profileData.patient?.emergencyContact ?? '',
+        emergencyPhone:   profileData.patient?.emergencyPhone ?? '',
+        specialization:   profileData.staff?.specialization ?? '',
+        licenseNumber:    profileData.staff?.licenseNumber ?? '',
+        department:       profileData.staff?.department ?? '',
       })
-    }
+
+      if (isAdmin && responses[2]) {
+        const adminData = await responses[2].json()
+        const c = adminData.clinic; const a = adminData.appointments
+        setClinicSettings(c); setApptSettings(a)
+        setClinicForm({
+          clinicName: c.clinicName ?? '', clinicEmail: c.clinicEmail ?? '',
+          clinicPhone: c.clinicPhone ?? '', clinicAddress: c.clinicAddress ?? '',
+          clinicCity: c.clinicCity ?? '', clinicZipCode: c.clinicZipCode ?? '',
+          operatingHours: c.operatingHours ?? '',
+        })
+      }
+    } catch { toast.error('Failed to load settings') }
+    finally  { setLoading(false) }
+  }, [isAdmin])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return }
+    if (!file.type.startsWith('image/')) { toast.error('File must be an image'); return }
+    const reader = new FileReader()
+    reader.onload = () => { const b64 = reader.result as string; setAvatarPreview(b64); setAvatarBase64(b64) }
+    reader.readAsDataURL(file)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSaveProfile = async () => {
+    setSavingProfile(true)
+    try {
+      const res = await fetch('/api/user/profile', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...profileForm, ...(avatarBase64 !== undefined && { image: avatarBase64 }) }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      const data = await res.json()
+      await updateSession({ name: data.name, ...(avatarBase64 !== undefined && { image: avatarBase64 }) })
+      toast.success('Profile updated'); setAvatarBase64(undefined); fetchData()
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to save profile') }
+    finally { setSavingProfile(false) }
+  }
+
+  const handleSavePassword = async () => {
+    setPasswordError('')
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordError('All fields are required'); return }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('New passwords do not match'); return }
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters'); return }
+    setSavingPassword(true)
+    try {
+      const res = await fetch('/api/user/password', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success('Password changed successfully')
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+    } catch (err) { setPasswordError(err instanceof Error ? err.message : 'Failed to change password') }
+    finally { setSavingPassword(false) }
+  }
+
+  const handleSaveSettings = async (updates: Partial<UserSettings>) => {
     if (!settings) return
-
-    setIsLoading(true)
+    setSavingSettings(true); setSettings({ ...settings, ...updates })
     try {
-      const response = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(settings),
+      const res = await fetch('/api/user/settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
       })
-
-      if (response.ok) {
-        toast.success('Settings updated successfully')
-      } else {
-        toast.error('Failed to update settings')
-      }
-    } catch (error) {
-      toast.error('An error occurred')
-    } finally {
-      setIsLoading(false)
-    }
+      if (!res.ok) throw new Error()
+      toast.success('Preferences saved')
+    } catch { toast.error('Failed to save preferences'); fetchData() }
+    finally { setSavingSettings(false) }
   }
 
-  if (unauthorized) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Settings</h1>
-        <Card className="mt-8">
-          <CardContent className="pt-6 text-center">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-foreground/70">You do not have permission to access this page</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  const handleSaveClinic = async () => {
+    setSavingClinic(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'clinic', data: clinicForm }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Clinic information saved')
+    } catch { toast.error('Failed to save clinic settings') }
+    finally { setSavingClinic(false) }
   }
 
-  if (!isAdmin || !settings) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Settings</h1>
-        <div className="flex items-center justify-center py-12">
-          <div className="text-foreground/70">Loading...</div>
-        </div>
-      </div>
-    )
+  const handleDeleteAccount = async () => {
+    setDeleteError('')
+    if (deleteConfirmText !== 'DELETE') { setDeleteError('Please type DELETE to confirm'); return }
+    if (!deletePassword) { setDeleteError('Password is required'); return }
+    setDeletingAccount(true)
+    try {
+      const res = await fetch('/api/user/delete', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePassword }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
+      toast.success('Account deleted. Signing out...')
+      await signOut({ redirect: true, redirectUrl: '/' })
+    } catch (err) { setDeleteError(err instanceof Error ? err.message : 'Failed to delete account') }
+    finally { setDeletingAccount(false) }
   }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <Loader2 className="h-8 w-8 animate-spin text-[#2d7a2d]" />
+    </div>
+  )
+
+  const initials = `${profileForm.firstName?.[0] ?? ''}${profileForm.lastName?.[0] ?? ''}`.toUpperCase() || 'U'
 
   return (
-    <div className="p-8">
-      <div className="flex items-center gap-3 mb-8">
-        <Settings className="h-8 w-8 text-primary" />
-        <h1 className="text-3xl font-bold text-foreground">Clinic Settings</h1>
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-800 mb-1">Settings</h1>
+          <p className="text-gray-500 text-sm">Manage your account and preferences</p>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Tab Nav */}
+          <div className="md:w-52 flex-shrink-0">
+            <nav className="space-y-1">
+              {TABS.map((tab) => {
+                const Icon = tab.icon; const isActive = activeTab === tab.key
+                return (
+                  <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left',
+                      isActive ? 'bg-[#2d7a2d] text-white shadow-sm' : 'text-gray-600 hover:bg-white hover:text-[#2d7a2d]'
+                    )}>
+                    <Icon className={cn('h-4 w-4 flex-shrink-0', isActive ? 'text-white' : 'text-gray-400')} />
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </nav>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 space-y-5">
+
+            {/* ── PROFILE ── */}
+            {activeTab === 'profile' && (
+              <>
+                <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-gray-800">Profile Picture</CardTitle>
+                    <CardDescription>Upload a photo to personalize your account</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-5">
+                      <div className="relative">
+                        {avatarPreview
+                          ? <img src={avatarPreview} alt="Avatar" className="h-20 w-20 rounded-full object-cover border-2 border-gray-100" />
+                          : <div className="h-20 w-20 rounded-full bg-[#2d7a2d]/10 flex items-center justify-center border-2 border-gray-100">
+                              <span className="text-2xl font-bold text-[#2d7a2d]">{initials}</span>
+                            </div>
+                        }
+                        <button onClick={() => fileInputRef.current?.click()}
+                          className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[#2d7a2d] text-white flex items-center justify-center shadow-md hover:bg-[#245f24] transition">
+                          <Camera className="h-3.5 w-3.5" />
+                        </button>
+                        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">{profileForm.firstName} {profileForm.lastName}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{profile?.email}</p>
+                        <p className="text-xs text-gray-300 mt-2">JPG, PNG or WEBP · Max 2MB</p>
+                        {avatarPreview && (
+                          <button onClick={() => { setAvatarPreview(null); setAvatarBase64(null) }}
+                            className="text-xs text-red-400 hover:text-red-600 mt-1 transition">Remove photo</button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                  <CardHeader className="pb-2"><CardTitle className="text-base text-gray-800">Basic Information</CardTitle></CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label>First Name</Label>
+                        <Input value={profileForm.firstName} onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })} /></div>
+                      <div className="space-y-2"><Label>Last Name</Label>
+                        <Input value={profileForm.lastName} onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })} /></div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input value={profile?.email ?? ''} disabled className="bg-gray-50 text-gray-400" />
+                      <p className="text-xs text-gray-400">Email cannot be changed</p>
+                    </div>
+                    <div className="space-y-2"><Label>Phone Number</Label>
+                      <Input type="tel" placeholder="+63 9XX XXX XXXX" value={profileForm.phone}
+                        onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} /></div>
+                  </CardContent>
+                </Card>
+
+                {role === 'PATIENT' && (
+                  <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base text-gray-800">Medical Information</CardTitle>
+                      <CardDescription>Used by clinic staff for your care</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2"><Label>Date of Birth</Label>
+                          <Input type="date" value={profileForm.dateOfBirth}
+                            onChange={(e) => setProfileForm({ ...profileForm, dateOfBirth: e.target.value })} /></div>
+                        <div className="space-y-2"><Label>Gender</Label>
+                          <Select value={profileForm.gender} onValueChange={(v) => setProfileForm({ ...profileForm, gender: v })}>
+                            <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                            <SelectContent>{GENDERS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                          </Select></div>
+                      </div>
+                      <div className="space-y-2"><Label>Blood Type</Label>
+                        <Select value={profileForm.bloodType} onValueChange={(v) => setProfileForm({ ...profileForm, bloodType: v })}>
+                          <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>{BLOOD_TYPES.map(bt => <SelectItem key={bt} value={bt}>{bt}</SelectItem>)}</SelectContent>
+                        </Select></div>
+                      <div className="space-y-2"><Label>Allergies</Label>
+                        <Textarea placeholder="List any known allergies..." value={profileForm.allergies}
+                          onChange={(e) => setProfileForm({ ...profileForm, allergies: e.target.value })}
+                          className="resize-none min-h-20" /></div>
+                      <div className="pt-2 border-t border-gray-50">
+                        <p className="text-sm font-medium text-gray-700 mb-3">Emergency Contact</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2"><Label>Contact Name</Label>
+                            <Input placeholder="Full name" value={profileForm.emergencyContact}
+                              onChange={(e) => setProfileForm({ ...profileForm, emergencyContact: e.target.value })} /></div>
+                          <div className="space-y-2"><Label>Contact Phone</Label>
+                            <Input type="tel" placeholder="+63 9XX XXX XXXX" value={profileForm.emergencyPhone}
+                              onChange={(e) => setProfileForm({ ...profileForm, emergencyPhone: e.target.value })} /></div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {role === 'STAFF' && (
+                  <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                    <CardHeader className="pb-2"><CardTitle className="text-base text-gray-800">Professional Information</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2"><Label>Specialization</Label>
+                        <Input value={profileForm.specialization}
+                          onChange={(e) => setProfileForm({ ...profileForm, specialization: e.target.value })} /></div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2"><Label>License Number</Label>
+                          <Input value={profileForm.licenseNumber}
+                            onChange={(e) => setProfileForm({ ...profileForm, licenseNumber: e.target.value })} /></div>
+                        <div className="space-y-2"><Label>Department</Label>
+                          <Input value={profileForm.department}
+                            onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })} /></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveProfile} disabled={savingProfile}
+                    className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl px-6">
+                    {savingProfile ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : <><Check className="h-4 w-4 mr-2" />Save Profile</>}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* ── SECURITY ── */}
+            {activeTab === 'security' && (
+              <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-gray-800">Change Password</CardTitle>
+                  <CardDescription>Use a strong password of at least 8 characters</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2"><Label>Current Password</Label>
+                    <Input type="password" value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      placeholder="Enter your current password" /></div>
+                  <div className="space-y-2"><Label>New Password</Label>
+                    <Input type="password" value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      placeholder="At least 8 characters" /></div>
+                  <div className="space-y-2"><Label>Confirm New Password</Label>
+                    <Input type="password" value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      placeholder="Repeat your new password" /></div>
+                  {passwordError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-red-800">{passwordError}</p>
+                    </div>
+                  )}
+                  <div className="flex justify-end pt-2">
+                    <Button onClick={handleSavePassword} disabled={savingPassword}
+                      className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl px-6">
+                      {savingPassword ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Updating...</> : <><Lock className="h-4 w-4 mr-2" />Update Password</>}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── PREFERENCES ── */}
+            {activeTab === 'preferences' && settings && (
+              <>
+                {/* Theme */}
+                <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-gray-800">Theme</CardTitle>
+                    <CardDescription>Choose your display preference</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { value: 'light',  label: 'Light',  icon: Sun },
+                        { value: 'dark',   label: 'Dark',   icon: Moon },
+                        { value: 'system', label: 'System', icon: Monitor },
+                      ].map((t) => {
+                        const Icon = t.icon; const isActive = theme === t.value
+                        return (
+                          <button key={t.value}
+                            onClick={() => { setTheme(t.value); handleSaveSettings({ theme: t.value }) }}
+                            className={cn(
+                              'flex flex-col items-center gap-2 p-4 rounded-xl border transition',
+                              isActive ? 'border-[#2d7a2d] bg-[#2d7a2d]/5 text-[#2d7a2d]' : 'border-gray-100 text-gray-500 hover:border-gray-200 hover:bg-gray-50'
+                            )}>
+                            <Icon className="h-5 w-5" />
+                            <span className="text-sm font-medium">{t.label}</span>
+                            {isActive && <Check className="h-3.5 w-3.5 text-[#2d7a2d]" />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Language */}
+                <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-gray-800">Language</CardTitle>
+                    <CardDescription>Select your preferred display language</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Select value={settings.language} onValueChange={(v) => handleSaveSettings({ language: v })} disabled={savingSettings}>
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>{LANGUAGES.map(l => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-400 mt-2">Full multi-language support is coming soon. The app currently displays in English.</p>
+                  </CardContent>
+                </Card>
+
+                {/* ── Notifications — PATIENT and STAFF only ── */}
+                {isPatientOrStaff && (
+                  <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base text-gray-800 flex items-center gap-2">
+                        <Bell className="h-4 w-4 text-[#2d7a2d]" />
+                        Notifications
+                      </CardTitle>
+                      <CardDescription>
+                        Choose how you want to be reminded about your appointments
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      {/* Email */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Email Notifications</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Reminders sent to <span className="font-medium text-gray-500">{profile?.email}</span>
+                          </p>
+                        </div>
+                        <Toggle
+                          checked={!!settings.emailNotifications}
+                          disabled={savingSettings}
+                          onChange={(v) => handleSaveSettings({ emailNotifications: v })}
+                        />
+                      </div>
+
+                      <div className="border-t border-gray-50" />
+
+                      {/* In-app */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">In-App Notifications</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Bell icon reminders while you're using the app
+                          </p>
+                        </div>
+                        <Toggle
+                          checked={!!settings.appNotifications}
+                          disabled={savingSettings}
+                          onChange={(v) => handleSaveSettings({ appNotifications: v })}
+                        />
+                      </div>
+
+                      <p className="text-xs text-gray-400 pt-1 border-t border-gray-50">
+                        You'll be notified 24 hours and 1 hour before each scheduled appointment.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Legal */}
+                <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                  <CardHeader><CardTitle className="text-base text-gray-800">Legal</CardTitle></CardHeader>
+                  <CardContent>
+                    {[
+                      { label: 'Privacy Policy',     desc: 'How we collect and use your data', href: '/privacy' },
+                      { label: 'Terms & Conditions', desc: 'Rules for using Kalinga-ni',        href: '/terms'   },
+                    ].map(item => (
+                      <a key={item.label} href={item.href} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center justify-between px-3 py-3 rounded-xl hover:bg-gray-50 transition group">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-gray-400" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">{item.label}</p>
+                            <p className="text-xs text-gray-400">{item.desc}</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition" />
+                      </a>
+                    ))}
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {/* ── CLINIC (ADMIN ONLY) ── */}
+            {activeTab === 'clinic' && isAdmin && (
+              <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-gray-800 flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-[#2d7a2d]" /> Clinic Information
+                  </CardTitle>
+                  <CardDescription>Basic details shown to patients</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Clinic Name</Label>
+                      <Input value={clinicForm.clinicName} onChange={(e) => setClinicForm({ ...clinicForm, clinicName: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>Email</Label>
+                      <Input type="email" value={clinicForm.clinicEmail} onChange={(e) => setClinicForm({ ...clinicForm, clinicEmail: e.target.value })} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Phone</Label>
+                      <Input value={clinicForm.clinicPhone} onChange={(e) => setClinicForm({ ...clinicForm, clinicPhone: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>City</Label>
+                      <Input value={clinicForm.clinicCity} onChange={(e) => setClinicForm({ ...clinicForm, clinicCity: e.target.value })} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Address</Label>
+                      <Input value={clinicForm.clinicAddress} onChange={(e) => setClinicForm({ ...clinicForm, clinicAddress: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>ZIP Code</Label>
+                      <Input value={clinicForm.clinicZipCode} onChange={(e) => setClinicForm({ ...clinicForm, clinicZipCode: e.target.value })} /></div>
+                  </div>
+                  <div className="space-y-2"><Label>Operating Hours</Label>
+                    <Input value={clinicForm.operatingHours} onChange={(e) => setClinicForm({ ...clinicForm, operatingHours: e.target.value })}
+                      placeholder="e.g. 9:00 AM - 6:00 PM, Monday to Friday" /></div>
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveClinic} disabled={savingClinic}
+                      className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl px-6">
+                      {savingClinic ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : <><Check className="h-4 w-4 mr-2" />Save Clinic Info</>}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── DANGER ZONE ── */}
+            {activeTab === 'danger' && (
+              <Card className="border-0 shadow-sm rounded-2xl bg-white border border-red-100">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-red-600 flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4" /> Delete Account
+                  </CardTitle>
+                  <CardDescription>
+                    Permanently deactivate your account. Your medical records and appointment history
+                    will be retained for clinic records but you will no longer be able to log in.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isAdmin ? (
+                    <div className="p-4 bg-gray-50 rounded-xl text-sm text-gray-500">
+                      Admin accounts cannot be self-deleted. Please contact a system administrator.
+                    </div>
+                  ) : (
+                    <Button variant="outline"
+                      onClick={() => { setDeletePassword(''); setDeleteConfirmText(''); setDeleteError(''); setShowDeleteDialog(true) }}
+                      className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 rounded-xl">
+                      <Trash2 className="h-4 w-4 mr-2" /> Delete My Account
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+          </div>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Clinic Information</CardTitle>
-          <CardDescription>Update your clinic details</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Clinic Name</label>
-                <Input
-                  type="text"
-                  name="clinicName"
-                  value={settings.clinicName}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
+      {/* Delete Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={(o) => { if (!o && !deletingAccount) setShowDeleteDialog(false) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600 flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5" /> Delete Account
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. Type <strong>DELETE</strong> and enter your password to confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-2"><Label>Type DELETE to confirm</Label>
+              <Input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder="DELETE" /></div>
+            <div className="space-y-2"><Label>Your Password</Label>
+              <Input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} placeholder="Enter your password" /></div>
+            {deleteError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-800">{deleteError}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Email</label>
-                <Input
-                  type="email"
-                  name="clinicEmail"
-                  value={settings.clinicEmail}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Phone</label>
-                <Input
-                  type="tel"
-                  name="clinicPhone"
-                  value={settings.clinicPhone}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">City</label>
-                <Input
-                  type="text"
-                  name="clinicCity"
-                  value={settings.clinicCity}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Address</label>
-                <Input
-                  type="text"
-                  name="clinicAddress"
-                  value={settings.clinicAddress}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Zip Code</label>
-                <Input
-                  type="text"
-                  name="clinicZipCode"
-                  value={settings.clinicZipCode}
-                  onChange={handleChange}
-                  disabled={isLoading}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Operating Hours</label>
-              <Textarea
-                name="operatingHours"
-                value={settings.operatingHours}
-                onChange={handleChange}
-                rows={3}
-                disabled={isLoading}
-              />
-            </div>
-
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : 'Save Settings'}
+            )}
+          </div>
+          <div className="flex gap-3 justify-end">
+            <AlertDialogCancel disabled={deletingAccount}>Cancel</AlertDialogCancel>
+            <Button onClick={handleDeleteAccount} disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
+              className="bg-red-600 hover:bg-red-700 text-white">
+              {deletingAccount ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Deleting...</> : <><Trash2 className="h-4 w-4 mr-2" />Delete Account</>}
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

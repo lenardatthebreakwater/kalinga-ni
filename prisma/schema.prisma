@@ -11,36 +11,61 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  email     String     @unique
+  id        String   @id @default(cuid())
+  email     String   @unique
   password  String
   firstName String
   lastName  String
-  role      String     @default("PATIENT") // PATIENT, STAFF, or ADMIN
-  status    String     @default("ACTIVE")  // ACTIVE, SUSPENDED, BANNED, DELETED
+  role      String   @default("PATIENT") // PATIENT, STAFF, or ADMIN
+  status    String   @default("ACTIVE")  // ACTIVE, SUSPENDED, BANNED, DELETED
   phone     String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  image     String?  // base64 or URL for profile picture
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  patient   Patient?
-  staff     Staff?
+  patient       Patient?
+  staff         Staff?
+  settings      UserSettings?
+  announcements Announcement[]
+  auditLogs     AuditLog[]
+  notifications NotificationLog[]
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Theme: "light" | "dark" | "system"
+  theme    String @default("system")
+
+  // Language: "en" | "tl" | "es" | "ceb" etc.
+  language String @default("en")
+
+  // Notification preferences
+  emailNotifications Boolean @default(true)
+  phoneNotifications Boolean @default(false)
+  appNotifications   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Patient {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  dateOfBirth   DateTime?
-  gender        String?
-  bloodType     String?
-  allergies     String?
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  dateOfBirth      DateTime?
+  gender           String?
+  bloodType        String?
+  allergies        String?
   emergencyContact String?
   emergencyPhone   String?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   medicalRecords MedicalRecord[]
@@ -48,35 +73,62 @@ model Patient {
 }
 
 model Staff {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   specialization String
   licenseNumber  String?
   department     String?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  appointments  Appointment[]
+  appointments Appointment[]
+  schedules    StaffSchedule[]
+}
+
+// Weekly schedule slots set manually by staff each week
+model StaffSchedule {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  // The specific date this slot is available (not recurring — set per week)
+  date      DateTime
+
+  // Start and end time stored as "HH:mm" strings (e.g. "09:00", "17:00")
+  startTime String
+  endTime   String
+
+  // Slot duration in minutes (determines how many bookable slots fit in the window)
+  slotDuration Int @default(30)
+
+  // Whether this slot is still accepting bookings
+  isAvailable Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffId])
+  @@index([date])
 }
 
 model Appointment {
-  id        String     @id @default(cuid())
+  id        String  @id @default(cuid())
   patientId String
-  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  
-  staffId   String
-  staff     Staff      @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
   appointmentDate DateTime
-  duration      Int      @default(30) // in minutes
-  reason        String
-  status        String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
-  notes         String?
-  
+  duration        Int      @default(30) // in minutes
+  reason          String
+  status          String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
+  notes           String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -88,34 +140,128 @@ model Appointment {
 }
 
 model MedicalRecord {
-  id            String   @id @default(cuid())
-  patientId     String
-  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  
-  appointmentId String?  @unique
+  id        String  @id @default(cuid())
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  appointmentId String?      @unique
   appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  
-  diagnosis     String
-  treatment     String
-  medications   String?
-  notes         String?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  diagnosis   String
+  treatment   String
+  medications String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([patientId])
 }
 
+// Announcements — written by STAFF or ADMIN, read by all
+model Announcement {
+  id       String @id @default(cuid())
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  title    String
+  content  String
+
+  // Who can see it: "ALL" | "PATIENT" | "STAFF"
+  audience String @default("ALL")
+
+  isPinned  Boolean @default(false)
+  isVisible Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+}
+
+// Admin-controlled clinic-wide appointment rules
+model AppointmentSettings {
+  id String @id @default(cuid())
+
+  // Hours before appointment that cancellation is no longer allowed
+  cancellationWindowHours Int @default(48)
+
+  // Max appointments per staff per day (0 = unlimited)
+  maxAppointmentsPerDay Int @default(0)
+
+  // Default appointment slot duration in minutes
+  defaultSlotDuration Int @default(30)
+
+  // Whether new bookings are currently allowed (maintenance mode)
+  bookingsEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model ClinicSettings {
-  id              String   @id @default(cuid())
-  clinicName      String   @default("Kalinga-ni Clinic")
-  clinicEmail     String
-  clinicPhone     String
-  clinicAddress   String
-  clinicCity      String
-  clinicZipCode   String
-  operatingHours  String   // JSON or formatted string
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String @id @default(cuid())
+  clinicName    String @default("Kalinga-ni Clinic")
+  clinicEmail   String
+  clinicPhone   String
+  clinicAddress String
+  clinicCity    String
+  clinicZipCode String
+  operatingHours String // JSON or formatted string
+
+  // Notification templates (used for email/SMS)
+  emailAppointmentConfirmation String? // Template with {patientName}, {date}, {time}, {doctor}
+  emailAppointmentReminder     String?
+  emailCancellationNotice      String?
+  smsAppointmentConfirmation   String?
+  smsAppointmentReminder       String?
+  smsCancellationNotice        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Log of sent notifications (email/SMS/app)
+model NotificationLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "EMAIL" | "SMS" | "APP"
+  channel String
+
+  subject String?
+  body    String
+
+  // "SENT" | "FAILED" | "PENDING"
+  status String @default("PENDING")
+
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Audit log for admin — tracks all significant actions
+model AuditLog {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // e.g. "UPDATE_APPOINTMENT", "DELETE_USER", "UPDATE_CLINIC_SETTINGS"
+  action String
+
+  // The model that was affected, e.g. "Appointment", "User"
+  entity String?
+
+  // The ID of the affected record
+  entityId String?
+
+  // JSON snapshot of what changed
+  metadata String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }

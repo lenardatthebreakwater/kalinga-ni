@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Check, X, AlertCircle, UserX } from 'lucide-react'
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -95,9 +94,11 @@ export default function AppointmentActions({
         throw new Error(data.error || 'Failed to update appointment')
       }
 
+      // ✅ Only close the dialog on success
       setPendingStatus(null)
       router.refresh()
     } catch (err) {
+      // ✅ Keep dialog open and show the error message
       setError(err instanceof Error ? err.message : 'Failed to update appointment')
     } finally {
       setLoading(false)
@@ -189,10 +190,13 @@ export default function AppointmentActions({
         </div>
       </TooltipProvider>
 
+      {/* ✅ FIX: Using Button instead of AlertDialogAction for the confirm button
+          so the dialog does NOT auto-close before the async handler finishes.
+          This keeps the dialog open on error so the message is visible. */}
       <AlertDialog
         open={pendingStatus !== null}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !loading) {
             setPendingStatus(null)
             setError('')
           }
@@ -213,13 +217,14 @@ export default function AppointmentActions({
 
           <div className="flex gap-3 justify-end">
             <AlertDialogCancel disabled={loading}>Go Back</AlertDialogCancel>
-            <AlertDialogAction
+            {/* ✅ Plain Button instead of AlertDialogAction — won't auto-close the dialog */}
+            <Button
               onClick={handleStatusUpdate}
               disabled={loading}
               className={dialog?.btnClass}
             >
               {loading ? 'Updating...' : 'Confirm'}
-            </AlertDialogAction>
+            </Button>
           </div>
         </AlertDialogContent>
       </AlertDialog>

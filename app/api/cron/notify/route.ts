@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { send24hReminder, send1hReminder } from "@/lib/notifications";
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const window1hStart  = new Date(now.getTime() + 45 * 60 * 1000);
     const window1hEnd    = new Date(now.getTime() + 75 * 60 * 1000);
 
-    const appointments = await db.appointment.findMany({
+    const appointments = await prisma.appointment.findMany({
       where: {
         status: "SCHEDULED",
         OR: [
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 
       // ── Email notification ─────────────────────────────────────────────────
       if (settings?.emailNotifications) {
-        const alreadySentEmail = await db.notificationLog.findFirst({
+        const alreadySentEmail = await prisma.notificationLog.findFirst({
           where: {
             userId:  patientUser.id,
             channel: "EMAIL",
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
               });
             }
 
-            await db.notificationLog.create({
+            await prisma.notificationLog.create({
               data: {
                 userId:  patientUser.id,
                 channel: "EMAIL",
@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
           } catch (err) {
             console.error(`Failed to send ${reminderType} email for appt ${appt.id}:`, err);
 
-            await db.notificationLog.create({
+            await prisma.notificationLog.create({
               data: {
                 userId:  patientUser.id,
                 channel: "EMAIL",
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
 
       // ── In-app notification ────────────────────────────────────────────────
       if (settings?.appNotifications) {
-        const alreadySentApp = await db.notificationLog.findFirst({
+        const alreadySentApp = await prisma.notificationLog.findFirst({
           where: {
             userId:  patientUser.id,
             channel: "APP",
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
               : `Your appointment with ${staffName} is in about 1 hour, at ${apptTimeStr}.`;
 
           try {
-            await db.notificationLog.create({
+            await prisma.notificationLog.create({
               data: {
                 userId:  patientUser.id,
                 channel: "APP",

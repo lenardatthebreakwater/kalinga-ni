@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 
 // GET /api/notifications — returns unread APP notifications for the current user
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const notifications = await db.notificationLog.findMany({
+  const notifications = await prisma.notificationLog.findMany({
     where: {
       userId:  session.user.id,
       channel: "APP",

@@ -19,3 +19,5 @@ node_modules
 credentials.txt
 prisma/migrations/
 prisma/dev.db
+
+todo.txt

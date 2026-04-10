@@ -2,6 +2,13 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Helper: convert a UTC Date to Philippine Time (UTC+8) minutes since midnight.
+// Used to compare UTC-stored datetimes against PHT "HH:mm" schedule strings.
+function toPhilippineMinutes(date: Date): number {
+  const pht = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  return pht.getUTCHours() * 60 + pht.getUTCMinutes()
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest) {
     const newStart = new Date(appointmentDate)
     const newEnd = new Date(newStart.getTime() + (duration || 30) * 60 * 1000)
 
-    // ✅ FIX: Use UTC methods to build the day boundary so it matches how
+    // Use UTC methods to build the day boundary so it matches how
     // dates are stored in the database (UTC midnight)
     const y = newStart.getUTCFullYear()
     const m = newStart.getUTCMonth()
@@ -58,10 +65,10 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // ✅ FIX: Use getUTCHours/getUTCMinutes so the comparison is done in the
-    // same timezone (UTC) as the stored "HH:mm" startTime/endTime strings
-    const slotStartMins = newStart.getUTCHours() * 60 + newStart.getUTCMinutes()
-    const slotEndMins = newEnd.getUTCHours() * 60 + newEnd.getUTCMinutes()
+    // FIX: Schedule startTime/endTime strings are stored in PHT ("HH:mm").
+    // Convert the UTC appointment datetime to PHT minutes before comparing.
+    const slotStartMins = toPhilippineMinutes(newStart)
+    const slotEndMins = toPhilippineMinutes(newEnd)
 
     const withinSchedule = scheduleSlots.some((s) => {
       const [sH, sM] = s.startTime.split(':').map(Number)
@@ -153,7 +160,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // ✅ FIX: Use UTC midnight so the filter boundary doesn't shift back a day
+    // Use UTC midnight so the filter boundary doesn't shift back a day
     const now = new Date()
     const todayUTC = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)

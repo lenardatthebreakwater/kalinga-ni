@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // ✅ FIX: Parse date string using UTC to avoid timezone shift
+    // Parse date string using UTC to avoid timezone shift
     const [y, m, d] = dateStr.split('-').map(Number)
     const date = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0))
     const nextDay = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0, 0))
@@ -60,7 +60,6 @@ export async function GET(request: NextRequest) {
     for (const schedule of scheduleSlots) {
       const [startH, startM] = schedule.startTime.split(':').map(Number)
       const [endH, endM] = schedule.endTime.split(':').map(Number)
-
       const windowStartMins = startH * 60 + startM
       const windowEndMins = endH * 60 + endM
       const slotDuration = schedule.slotDuration
@@ -72,22 +71,30 @@ export async function GET(request: NextRequest) {
         const slotStartM = cursor % 60
         const slotEndMins = cursor + slotDuration
 
-        // ✅ FIX: Build the datetime using setUTCHours so it matches how
-        // the date was stored — no local-time drift
-        const slotDatetime = new Date(date)
-        slotDatetime.setUTCHours(slotStartH, slotStartM, 0, 0)
+        // FIX: Build the datetime by treating startTime as PHT (UTC+8).
+        // Appending +08:00 ensures the ISO string is correctly converted to UTC
+        // when stored — so "09:00 PHT" becomes "01:00 UTC", not "09:00 UTC".
+        const timeStr = `${String(slotStartH).padStart(2, '0')}:${String(slotStartM).padStart(2, '0')}:00`
+        const slotDatetime = new Date(`${dateStr}T${timeStr}+08:00`)
 
-        // Check if this slot is already booked
+        // Check if this slot is already booked.
+        // Since appointmentDate is stored in UTC, and our schedule strings are PHT,
+        // we convert booked appointment times to PHT minutes for comparison.
         const isBooked = bookedAppointments.some((apt) => {
           const aptStart = new Date(apt.appointmentDate)
           const aptEnd = new Date(aptStart.getTime() + apt.duration * 60 * 1000)
-          // ✅ FIX: Use UTC hours for the overlap check to stay consistent
-          const aptStartMins = aptStart.getUTCHours() * 60 + aptStart.getUTCMinutes()
-          const aptEndMins = aptEnd.getUTCHours() * 60 + aptEnd.getUTCMinutes()
+
+          // Shift to PHT (UTC+8) before extracting hours/minutes
+          const aptStartPHT = new Date(aptStart.getTime() + 8 * 60 * 60 * 1000)
+          const aptEndPHT = new Date(aptEnd.getTime() + 8 * 60 * 60 * 1000)
+
+          const aptStartMins = aptStartPHT.getUTCHours() * 60 + aptStartPHT.getUTCMinutes()
+          const aptEndMins = aptEndPHT.getUTCHours() * 60 + aptEndPHT.getUTCMinutes()
+
           return cursor < aptEndMins && slotEndMins > aptStartMins
         })
 
-        // Skip slots in the past
+        // Skip slots in the past (slotDatetime is now a true UTC instant)
         const now = new Date()
         const isPast = slotDatetime <= now
 

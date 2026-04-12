@@ -17,6 +17,7 @@ const TAB_CONFIG: Record<Tab, { label: string; statuses: string[] }> = {
   cancelled: { label: 'Cancelled', statuses: ['CANCELLED'] },
 }
 
+// The exact prefix written to appointment.notes when staff removes a slot
 const STAFF_CANCELLATION_PREFIX = 'Cancelled: Staff removed their availability for this time slot'
 
 function formatAppointmentDate(date: Date) {

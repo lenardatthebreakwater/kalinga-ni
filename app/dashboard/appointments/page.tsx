@@ -197,7 +197,7 @@ export default async function AppointmentsPage({
                   }`}
                 >
                   <CardContent className="pt-6">
-                    {/* Staff-cancellation banner — only shown to patients */}
+                    {/* Staff-cancellation banner — message differs by role */}
                     {staffCancelled && session.user.role === 'PATIENT' && (
                       <div className="flex items-start gap-2 mb-4 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
                         <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
@@ -209,6 +209,14 @@ export default async function AppointmentsPage({
                             The doctor removed their availability for this time slot. Please book a new appointment at your convenience.
                           </p>
                         </div>
+                      </div>
+                    )}
+                    {staffCancelled && session.user.role === 'STAFF' && (
+                      <div className="flex items-start gap-2 mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                        <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                        <p className="text-sm text-amber-700">
+                          You removed your availability for this time slot.
+                        </p>
                       </div>
                     )}
 

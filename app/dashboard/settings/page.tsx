@@ -18,7 +18,7 @@ import {
 import {
   User, Lock, Globe, Moon, Sun, Monitor, Trash2, Camera,
   AlertCircle, Check, Loader2, ShieldAlert, FileText, ChevronRight,
-  Building2, Bell,
+  Building2, Bell, Scale,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -77,13 +77,6 @@ interface AppointmentSettings {
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const LANGUAGES = [
-  { value: 'en',  label: 'English' },
-  { value: 'tl',  label: 'Filipino (Tagalog)' },
-  { value: 'ceb', label: 'Cebuano' },
-  { value: 'es',  label: 'Español' },
-]
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 const GENDERS     = ['Male', 'Female', 'Other', 'Prefer not to say']
 
@@ -124,6 +117,7 @@ export default function SettingsPage() {
     { key: 'security',    label: 'Security',    icon: Lock,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
     { key: 'preferences', label: 'Preferences', icon: Globe,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
     { key: 'clinic',      label: 'Clinic',      icon: Building2,   roles: ['ADMIN'] },
+    { key: 'legal',       label: 'Legal',       icon: Scale,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
     { key: 'danger',      label: 'Account',     icon: ShieldAlert, roles: ['PATIENT', 'STAFF', 'ADMIN'] },
   ].filter(t => role && t.roles.includes(role))
 
@@ -141,8 +135,6 @@ export default function SettingsPage() {
     specialization: '', licenseNumber: '', department: '',
   })
 
-  // avatarPreview  — the <img> src shown in the UI (blob URL or existing URL)
-  // uploadingAvatar — true while the file is being sent to /api/user/avatar
   const [avatarPreview,   setAvatarPreview]   = useState<string | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingProfile,   setSavingProfile]   = useState(false)
@@ -224,17 +216,12 @@ export default function SettingsPage() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  // FIX: Instead of converting to base64 and bundling with the profile PATCH,
-  // we upload the file immediately to /api/user/avatar (Vercel Blob) as soon
-  // as the user picks it. The profile PATCH no longer touches the image field.
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return }
     if (!file.type.startsWith('image/')) { toast.error('File must be an image'); return }
 
-    // Show a local object URL immediately so the user sees the preview
     const localPreview = URL.createObjectURL(file)
     setAvatarPreview(localPreview)
     setUploadingAvatar(true)
@@ -242,26 +229,17 @@ export default function SettingsPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-
       const res = await fetch('/api/user/avatar', { method: 'POST', body: formData })
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error ?? 'Upload failed')
-      }
-
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Upload failed') }
       const { url } = await res.json()
-
-      // Replace the local object URL with the real Vercel Blob URL
       setAvatarPreview(url)
       await updateSession({ image: url })
       toast.success('Profile picture updated')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to upload photo')
-      // Roll back preview to the previous image
       setAvatarPreview(profile?.image ?? null)
     } finally {
       setUploadingAvatar(false)
-      // Reset the input so the same file can be re-selected if needed
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -287,7 +265,6 @@ export default function SettingsPage() {
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        // No image field here — avatar is handled separately by /api/user/avatar
         body: JSON.stringify(profileForm),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
@@ -459,29 +436,18 @@ export default function SettingsPage() {
                             : <Camera className="h-3.5 w-3.5" />
                           }
                         </button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleAvatarChange}
-                        />
+                        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-700">{profileForm.firstName} {profileForm.lastName}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{profile?.email}</p>
                         <p className="text-xs text-gray-300 mt-2">JPG, PNG or WEBP · Max 2MB</p>
                         {avatarPreview && !uploadingAvatar && (
-                          <button
-                            onClick={handleRemoveAvatar}
-                            className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
-                          >
+                          <button onClick={handleRemoveAvatar} className="text-xs text-red-400 hover:text-red-600 mt-1 transition">
                             Remove photo
                           </button>
                         )}
-                        {uploadingAvatar && (
-                          <p className="text-xs text-gray-400 mt-1">Uploading...</p>
-                        )}
+                        {uploadingAvatar && <p className="text-xs text-gray-400 mt-1">Uploading...</p>}
                       </div>
                     </div>
                   </CardContent>
@@ -615,7 +581,6 @@ export default function SettingsPage() {
             {/* ── PREFERENCES ── */}
             {activeTab === 'preferences' && settings && (
               <>
-                {/* Theme */}
                 <Card className="border-0 shadow-sm rounded-2xl bg-white">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base text-gray-800">Theme</CardTitle>
@@ -646,32 +611,13 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Language */}
-                <Card className="border-0 shadow-sm rounded-2xl bg-white">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base text-gray-800">Language</CardTitle>
-                    <CardDescription>Select your preferred display language</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Select value={settings.language} onValueChange={(v) => handleSaveSettings({ language: v })} disabled={savingSettings}>
-                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent>{LANGUAGES.map(l => <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-400 mt-2">Full multi-language support is coming soon. The app currently displays in English.</p>
-                  </CardContent>
-                </Card>
-
-                {/* Notifications — PATIENT and STAFF only */}
                 {isPatientOrStaff && (
                   <Card className="border-0 shadow-sm rounded-2xl bg-white">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base text-gray-800 flex items-center gap-2">
-                        <Bell className="h-4 w-4 text-[#2d7a2d]" />
-                        Notifications
+                        <Bell className="h-4 w-4 text-[#2d7a2d]" /> Notifications
                       </CardTitle>
-                      <CardDescription>
-                        Choose how you want to be reminded about your appointments
-                      </CardDescription>
+                      <CardDescription>Choose how you want to be reminded about your appointments</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
                       <div className="flex items-center justify-between gap-4">
@@ -681,25 +627,17 @@ export default function SettingsPage() {
                             Reminders sent to <span className="font-medium text-gray-500">{profile?.email}</span>
                           </p>
                         </div>
-                        <Toggle
-                          checked={!!settings.emailNotifications}
-                          disabled={savingSettings}
-                          onChange={(v) => handleSaveSettings({ emailNotifications: v })}
-                        />
+                        <Toggle checked={!!settings.emailNotifications} disabled={savingSettings}
+                          onChange={(v) => handleSaveSettings({ emailNotifications: v })} />
                       </div>
                       <div className="border-t border-gray-50" />
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="text-sm font-medium text-gray-700">In-App Notifications</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            Bell icon reminders while you're using the app
-                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">Bell icon reminders while you're using the app</p>
                         </div>
-                        <Toggle
-                          checked={!!settings.appNotifications}
-                          disabled={savingSettings}
-                          onChange={(v) => handleSaveSettings({ appNotifications: v })}
-                        />
+                        <Toggle checked={!!settings.appNotifications} disabled={savingSettings}
+                          onChange={(v) => handleSaveSettings({ appNotifications: v })} />
                       </div>
                       <p className="text-xs text-gray-400 pt-1 border-t border-gray-50">
                         You'll be notified 24 hours and 1 hour before each scheduled appointment.
@@ -707,29 +645,6 @@ export default function SettingsPage() {
                     </CardContent>
                   </Card>
                 )}
-
-                {/* Legal */}
-                <Card className="border-0 shadow-sm rounded-2xl bg-white">
-                  <CardHeader><CardTitle className="text-base text-gray-800">Legal</CardTitle></CardHeader>
-                  <CardContent>
-                    {[
-                      { label: 'Privacy Policy',     desc: 'How we collect and use your data', href: '/privacy' },
-                      { label: 'Terms & Conditions', desc: 'Rules for using Kalinga-ni',        href: '/terms'   },
-                    ].map(item => (
-                      <a key={item.label} href={item.href} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center justify-between px-3 py-3 rounded-xl hover:bg-gray-50 transition group">
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-4 w-4 text-gray-400" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-700">{item.label}</p>
-                            <p className="text-xs text-gray-400">{item.desc}</p>
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition" />
-                      </a>
-                    ))}
-                  </CardContent>
-                </Card>
               </>
             )}
 
@@ -770,6 +685,57 @@ export default function SettingsPage() {
                       {savingClinic ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : <><Check className="h-4 w-4 mr-2" />Save Clinic Info</>}
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── LEGAL ── */}
+            {activeTab === 'legal' && (
+              <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-gray-800 flex items-center gap-2">
+                    <Scale className="h-4 w-4 text-[#2d7a2d]" /> Legal
+                  </CardTitle>
+                  <CardDescription>Review our policies and terms of use</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
+                        <FileText className="h-4 w-4 text-[#2d7a2d]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Privacy Policy</p>
+                        <p className="text-xs text-gray-400">How we collect and use your data</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition" />
+                  </a>
+
+                  <div className="border-t border-gray-50 mx-3" />
+
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
+                        <Scale className="h-4 w-4 text-[#2d7a2d]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Terms &amp; Conditions</p>
+                        <p className="text-xs text-gray-400">Rules for using Kalinga-ni</p>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition" />
+                  </a>
                 </CardContent>
               </Card>
             )}

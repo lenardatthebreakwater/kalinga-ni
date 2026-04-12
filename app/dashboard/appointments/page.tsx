@@ -17,6 +17,26 @@ const TAB_CONFIG: Record<Tab, { label: string; statuses: string[] }> = {
   cancelled: { label: 'Cancelled', statuses: ['CANCELLED'] },
 }
 
+// FIX: Always format dates in PHT (Asia/Manila) so the server-side render
+// doesn't fall back to UTC and show the wrong time.
+function formatAppointmentDate(date: Date) {
+  return date.toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
+function formatAppointmentTime(date: Date) {
+  return date.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default async function AppointmentsPage({
   searchParams,
 }: {
@@ -40,7 +60,6 @@ export default async function AppointmentsPage({
 
   try {
     if (session.user.role === 'PATIENT') {
-      // Look up the Patient record to get Patient.id
       const patient = await prisma.patient.findUnique({
         where: { userId: session.user.id as string },
       })
@@ -60,7 +79,6 @@ export default async function AppointmentsPage({
       }
 
     } else if (session.user.role === 'STAFF') {
-      // Look up the Staff record to get Staff.id (different from User.id)
       const staff = await prisma.staff.findUnique({
         where: { userId: session.user.id as string },
       })
@@ -167,21 +185,13 @@ export default async function AppointmentsPage({
                       <div className="flex items-center gap-2 mb-2">
                         <Calendar className="h-4 w-4 text-[#2d7a2d]" />
                         <span className="font-semibold text-gray-800">
-                          {apt.appointmentDate.toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                          })}
+                          {formatAppointmentDate(apt.appointmentDate)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mb-2">
                         <Clock className="h-4 w-4 text-[#1a5fa8]" />
                         <span className="text-gray-500 text-sm">
-                          {apt.appointmentDate.toLocaleTimeString('en-US', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {formatAppointmentTime(apt.appointmentDate)}
                         </span>
                         <span className="text-gray-400 text-sm">({apt.duration} minutes)</span>
                       </div>

@@ -12,8 +12,12 @@ function resolveRecipient(email: string) {
     : email;
 }
 
+// FIX: Always explicitly pass timeZone: 'Asia/Manila' so that when this code
+// runs on the server (which defaults to UTC), dates are formatted in PHT
+// instead of showing the raw UTC time.
 function formatDate(date: Date) {
   return date.toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -23,6 +27,7 @@ function formatDate(date: Date) {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString("en-PH", {
+    timeZone: "Asia/Manila",
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
@@ -36,7 +41,7 @@ function build24hEmail(patientName: string, staffName: string, appointmentDate: 
   const time = formatTime(appointmentDate);
 
   return {
-    subject: `Reminder: Your appointment is tomorrow — ${date}`,
+    subject: `Reminder: Your appointment is tomorrow – ${date}`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
         <div style="background: #0f766e; padding: 24px 32px; border-radius: 8px 8px 0 0;">
@@ -74,7 +79,7 @@ function build24hEmail(patientName: string, staffName: string, appointmentDate: 
             Please arrive on time. If you need to cancel or reschedule, please do so as soon as possible through the patient portal.
           </p>
           <p style="font-size: 14px; color: #374151;">See you tomorrow!</p>
-          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">— The ${CLINIC_NAME} Team</p>
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">– The ${CLINIC_NAME} Team</p>
         </div>
       </div>
     `,
@@ -86,7 +91,7 @@ function build1hEmail(patientName: string, staffName: string, appointmentDate: D
   const time = formatTime(appointmentDate);
 
   return {
-    subject: `Your appointment is in 1 hour — ${time}`,
+    subject: `Your appointment is in 1 hour – ${time}`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
         <div style="background: #0f766e; padding: 24px 32px; border-radius: 8px 8px 0 0;">
@@ -123,7 +128,7 @@ function build1hEmail(patientName: string, staffName: string, appointmentDate: D
           <p style="font-size: 14px; color: #6b7280;">
             We look forward to seeing you shortly!
           </p>
-          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">— The ${CLINIC_NAME} Team</p>
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">– The ${CLINIC_NAME} Team</p>
         </div>
       </div>
     `,

@@ -19,7 +19,7 @@ model User {
   role      String   @default("PATIENT") // PATIENT, STAFF, or ADMIN
   status    String   @default("ACTIVE")  // ACTIVE, SUSPENDED, BANNED, DELETED
   phone     String?
-  image     String?  // base64 or URL for profile picture
+  image     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -37,13 +37,10 @@ model UserSettings {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Theme: "light" | "dark" | "system"
   theme    String @default("system")
 
-  // Language: "en" | "tl" | "es" | "ceb" etc.
   language String @default("en")
 
-  // Notification preferences
   emailNotifications Boolean @default(true)
   phoneNotifications Boolean @default(false)
   appNotifications   Boolean @default(true)

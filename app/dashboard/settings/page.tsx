@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession, signOut } from 'next-auth/react'
-import { useTheme } from 'next-themes'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,14 +15,14 @@ import {
   AlertDialogDescription, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  User, Lock, Globe, Moon, Sun, Monitor, Trash2, Camera,
+  User, Lock, Trash2, Camera,
   AlertCircle, Check, Loader2, ShieldAlert, FileText, ChevronRight,
   Building2, Bell, Scale,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface UserProfile {
   id: string
@@ -76,11 +75,11 @@ interface AppointmentSettings {
   bookingsEnabled: boolean
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────
 const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
 const GENDERS     = ['Male', 'Female', 'Other', 'Prefer not to say']
 
-// ── Toggle ───────────────────────────────────────────────────────────────────
+// ── Toggle ─────────────────────────────────────────────────────────────────
 
 function Toggle({ checked, onChange, disabled }: {
   checked: boolean; onChange: (v: boolean) => void; disabled?: boolean
@@ -102,23 +101,22 @@ function Toggle({ checked, onChange, disabled }: {
   )
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const { data: session, update: updateSession } = useSession()
-  const { theme, setTheme } = useTheme()
   const role             = (session?.user as any)?.role as string | undefined
   const isAdmin          = role === 'ADMIN'
   const isPatientOrStaff = role === 'PATIENT' || role === 'STAFF'
   const fileInputRef     = useRef<HTMLInputElement>(null)
 
   const TABS = [
-    { key: 'profile',     label: 'Profile',     icon: User,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
-    { key: 'security',    label: 'Security',    icon: Lock,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
-    { key: 'preferences', label: 'Preferences', icon: Globe,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
-    { key: 'clinic',      label: 'Clinic',      icon: Building2,   roles: ['ADMIN'] },
-    { key: 'legal',       label: 'Legal',       icon: Scale,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
-    { key: 'danger',      label: 'Account',     icon: ShieldAlert, roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'profile',       label: 'Profile',       icon: User,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'security',      label: 'Security',      icon: Lock,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'notifications', label: 'Notifications', icon: Bell,        roles: ['PATIENT', 'STAFF'] },
+    { key: 'clinic',        label: 'Clinic',        icon: Building2,   roles: ['ADMIN'] },
+    { key: 'legal',         label: 'Legal',         icon: Scale,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
+    { key: 'danger',        label: 'Account',       icon: ShieldAlert, roles: ['PATIENT', 'STAFF', 'ADMIN'] },
   ].filter(t => role && t.roles.includes(role))
 
   const [activeTab,      setActiveTab]      = useState('profile')
@@ -159,7 +157,7 @@ export default function SettingsPage() {
   const [deletingAccount,   setDeletingAccount]   = useState(false)
   const [deleteError,       setDeleteError]       = useState('')
 
-  // ── Fetch ────────────────────────────────────────────────────────────────
+  // ── Fetch ──────────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -214,7 +212,7 @@ export default function SettingsPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // ── Handlers ───────────────────────────────────────────────────────────
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -368,7 +366,7 @@ export default function SettingsPage() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -578,74 +576,40 @@ export default function SettingsPage() {
               </Card>
             )}
 
-            {/* ── PREFERENCES ── */}
-            {activeTab === 'preferences' && settings && (
-              <>
-                <Card className="border-0 shadow-sm rounded-2xl bg-white">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base text-gray-800">Theme</CardTitle>
-                    <CardDescription>Choose your display preference</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-3 gap-3">
-                      {[
-                        { value: 'light',  label: 'Light',  icon: Sun },
-                        { value: 'dark',   label: 'Dark',   icon: Moon },
-                        { value: 'system', label: 'System', icon: Monitor },
-                      ].map((t) => {
-                        const Icon = t.icon; const isActive = theme === t.value
-                        return (
-                          <button key={t.value}
-                            onClick={() => { setTheme(t.value); handleSaveSettings({ theme: t.value }) }}
-                            className={cn(
-                              'flex flex-col items-center gap-2 p-4 rounded-xl border transition',
-                              isActive ? 'border-[#2d7a2d] bg-[#2d7a2d]/5 text-[#2d7a2d]' : 'border-gray-100 text-gray-500 hover:border-gray-200 hover:bg-gray-50'
-                            )}>
-                            <Icon className="h-5 w-5" />
-                            <span className="text-sm font-medium">{t.label}</span>
-                            {isActive && <Check className="h-3.5 w-3.5 text-[#2d7a2d]" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {isPatientOrStaff && (
-                  <Card className="border-0 shadow-sm rounded-2xl bg-white">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base text-gray-800 flex items-center gap-2">
-                        <Bell className="h-4 w-4 text-[#2d7a2d]" /> Notifications
-                      </CardTitle>
-                      <CardDescription>Choose how you want to be reminded about your appointments</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-gray-700">Email Notifications</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            Reminders sent to <span className="font-medium text-gray-500">{profile?.email}</span>
-                          </p>
-                        </div>
-                        <Toggle checked={!!settings.emailNotifications} disabled={savingSettings}
-                          onChange={(v) => handleSaveSettings({ emailNotifications: v })} />
-                      </div>
-                      <div className="border-t border-gray-50" />
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-gray-700">In-App Notifications</p>
-                          <p className="text-xs text-gray-400 mt-0.5">Bell icon reminders while you're using the app</p>
-                        </div>
-                        <Toggle checked={!!settings.appNotifications} disabled={savingSettings}
-                          onChange={(v) => handleSaveSettings({ appNotifications: v })} />
-                      </div>
-                      <p className="text-xs text-gray-400 pt-1 border-t border-gray-50">
-                        You'll be notified 24 hours and 1 hour before each scheduled appointment.
+            {/* ── NOTIFICATIONS (PATIENT & STAFF only) ── */}
+            {activeTab === 'notifications' && settings && isPatientOrStaff && (
+              <Card className="border-0 shadow-sm rounded-2xl bg-white">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-gray-800 flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-[#2d7a2d]" /> Notification Preferences
+                  </CardTitle>
+                  <CardDescription>Choose how you want to be reminded about your appointments</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Email Notifications</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Reminders sent to <span className="font-medium text-gray-500">{profile?.email}</span>
                       </p>
-                    </CardContent>
-                  </Card>
-                )}
-              </>
+                    </div>
+                    <Toggle checked={!!settings.emailNotifications} disabled={savingSettings}
+                      onChange={(v) => handleSaveSettings({ emailNotifications: v })} />
+                  </div>
+                  <div className="border-t border-gray-50" />
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">In-App Notifications</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Bell icon reminders while you're using the app</p>
+                    </div>
+                    <Toggle checked={!!settings.appNotifications} disabled={savingSettings}
+                      onChange={(v) => handleSaveSettings({ appNotifications: v })} />
+                  </div>
+                  <p className="text-xs text-gray-400 pt-1 border-t border-gray-50">
+                    You'll be notified 24 hours and 1 hour before each scheduled appointment.
+                  </p>
+                </CardContent>
+              </Card>
             )}
 
             {/* ── CLINIC (ADMIN ONLY) ── */}
@@ -699,12 +663,8 @@ export default function SettingsPage() {
                   <CardDescription>Review our policies and terms of use</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <a
-                    href="/privacy"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group"
-                  >
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group">
                     <div className="flex items-center gap-3">
                       <div className="h-9 w-9 rounded-lg bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
                         <FileText className="h-4 w-4 text-[#2d7a2d]" />
@@ -716,15 +676,9 @@ export default function SettingsPage() {
                     </div>
                     <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition" />
                   </a>
-
                   <div className="border-t border-gray-50 mx-3" />
-
-                  <a
-                    href="/terms"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group"
-                  >
+                  <a href="/terms" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-3.5 rounded-xl hover:bg-gray-50 transition group">
                     <div className="flex items-center gap-3">
                       <div className="h-9 w-9 rounded-lg bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
                         <Scale className="h-4 w-4 text-[#2d7a2d]" />

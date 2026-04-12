@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Calendar, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import AppointmentActions from '@/components/appointments/appointment-actions'
 import AddMedicalRecord from '@/components/appointments/add-medical-record'
 
@@ -17,8 +17,8 @@ const TAB_CONFIG: Record<Tab, { label: string; statuses: string[] }> = {
   cancelled: { label: 'Cancelled', statuses: ['CANCELLED'] },
 }
 
-// FIX: Always format dates in PHT (Asia/Manila) so the server-side render
-// doesn't fall back to UTC and show the wrong time.
+const STAFF_CANCELLATION_PREFIX = 'Cancelled: Staff removed their availability for this time slot'
+
 function formatAppointmentDate(date: Date) {
   return date.toLocaleDateString('en-US', {
     timeZone: 'Asia/Manila',
@@ -35,6 +35,14 @@ function formatAppointmentTime(date: Date) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/**
+ * Returns true if this appointment was cancelled because the staff removed
+ * their availability slot (as opposed to a patient-initiated cancellation).
+ */
+function isStaffCancellation(notes: string | null): boolean {
+  return !!notes && notes.includes(STAFF_CANCELLATION_PREFIX)
 }
 
 export default async function AppointmentsPage({
@@ -177,78 +185,104 @@ export default async function AppointmentsPage({
       ) : (
         <>
           <div className="space-y-4 mb-6">
-            {appointments.map(apt => (
-              <Card key={apt.id} className="border-0 shadow-sm rounded-2xl bg-white hover:shadow-md transition">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Calendar className="h-4 w-4 text-[#2d7a2d]" />
-                        <span className="font-semibold text-gray-800">
-                          {formatAppointmentDate(apt.appointmentDate)}
-                        </span>
+            {appointments.map(apt => {
+              const staffCancelled = isStaffCancellation(apt.notes)
+
+              return (
+                <Card
+                  key={apt.id}
+                  className={`border-0 shadow-sm rounded-2xl bg-white hover:shadow-md transition ${
+                    staffCancelled ? 'ring-1 ring-red-200' : ''
+                  }`}
+                >
+                  <CardContent className="pt-6">
+                    {/* Staff-cancellation banner — only shown to patients */}
+                    {staffCancelled && session.user.role === 'PATIENT' && (
+                      <div className="flex items-start gap-2 mb-4 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl">
+                        <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-red-700">
+                            Appointment cancelled by clinic
+                          </p>
+                          <p className="text-xs text-red-600 mt-0.5">
+                            The doctor removed their availability for this time slot. Please book a new appointment at your convenience.
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="h-4 w-4 text-[#1a5fa8]" />
-                        <span className="text-gray-500 text-sm">
-                          {formatAppointmentTime(apt.appointmentDate)}
-                        </span>
-                        <span className="text-gray-400 text-sm">({apt.duration} minutes)</span>
+                    )}
+
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Calendar className="h-4 w-4 text-[#2d7a2d]" />
+                          <span className="font-semibold text-gray-800">
+                            {formatAppointmentDate(apt.appointmentDate)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Clock className="h-4 w-4 text-[#1a5fa8]" />
+                          <span className="text-gray-500 text-sm">
+                            {formatAppointmentTime(apt.appointmentDate)}
+                          </span>
+                          <span className="text-gray-400 text-sm">({apt.duration} minutes)</span>
+                        </div>
+                        <p className="text-gray-700 text-sm mb-2">Reason: {apt.reason}</p>
+
+                        {session.user.role === 'STAFF' && apt.patient ? (
+                          <p className="text-gray-500 text-sm">
+                            Patient: <span className="font-medium text-gray-700">{apt.patient.user.firstName} {apt.patient.user.lastName}</span>
+                          </p>
+                        ) : session.user.role !== 'STAFF' && apt.staff ? (
+                          <p className="text-gray-500 text-sm">
+                            Doctor: <span className="font-medium text-gray-700">Dr. {apt.staff.user.firstName} {apt.staff.user.lastName}</span>
+                          </p>
+                        ) : null}
+
+                        {/* Only show raw notes if NOT a staff cancellation
+                            (the banner above already communicates the reason to patients) */}
+                        {apt.notes && !staffCancelled && (
+                          <p className="text-gray-400 text-sm mt-2">Notes: {apt.notes}</p>
+                        )}
+
+                        {apt.medicalRecord && (
+                          <p className="text-xs text-[#2d7a2d] font-medium mt-2">
+                            ✓ Medical record on file
+                          </p>
+                        )}
                       </div>
-                      <p className="text-gray-700 text-sm mb-2">Reason: {apt.reason}</p>
 
-                      {session.user.role === 'STAFF' && apt.patient ? (
-                        <p className="text-gray-500 text-sm">
-                          Patient: <span className="font-medium text-gray-700">{apt.patient.user.firstName} {apt.patient.user.lastName}</span>
-                        </p>
-                      ) : session.user.role !== 'STAFF' && apt.staff ? (
-                        <p className="text-gray-500 text-sm">
-                          Doctor: <span className="font-medium text-gray-700">Dr. {apt.staff.user.firstName} {apt.staff.user.lastName}</span>
-                        </p>
-                      ) : null}
+                      <div className="ml-4 flex flex-col gap-2 items-end">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(apt.status)}`}>
+                          {apt.status}
+                        </span>
 
-                      {apt.notes && (
-                        <p className="text-gray-400 text-sm mt-2">Notes: {apt.notes}</p>
-                      )}
-
-                      {apt.medicalRecord && (
-                        <p className="text-xs text-[#2d7a2d] font-medium mt-2">
-                          ✓ Medical record on file
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="ml-4 flex flex-col gap-2 items-end">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(apt.status)}`}>
-                        {apt.status}
-                      </span>
-
-                      {apt.status === 'SCHEDULED' && (
-                        <AppointmentActions
-                          appointmentId={apt.id}
-                          currentStatus={apt.status}
-                          userRole={session.user.role}
-                          appointmentDate={apt.appointmentDate}
-                          duration={apt.duration}
-                        />
-                      )}
-
-                      {session.user.role === 'STAFF' &&
-                        apt.status === 'COMPLETED' &&
-                        !apt.medicalRecord && (
-                          <AddMedicalRecord
+                        {apt.status === 'SCHEDULED' && (
+                          <AppointmentActions
                             appointmentId={apt.id}
-                            patientId={apt.patientId}
-                            patientName={`${apt.patient?.user?.firstName} ${apt.patient?.user?.lastName}`}
+                            currentStatus={apt.status}
+                            userRole={session.user.role}
                             appointmentDate={apt.appointmentDate}
-                            reason={apt.reason}
+                            duration={apt.duration}
                           />
                         )}
+
+                        {session.user.role === 'STAFF' &&
+                          apt.status === 'COMPLETED' &&
+                          !apt.medicalRecord && (
+                            <AddMedicalRecord
+                              appointmentId={apt.id}
+                              patientId={apt.patientId}
+                              patientName={`${apt.patient?.user?.firstName} ${apt.patient?.user?.lastName}`}
+                              appointmentDate={apt.appointmentDate}
+                              reason={apt.reason}
+                            />
+                          )}
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
 
           {/* Pagination */}

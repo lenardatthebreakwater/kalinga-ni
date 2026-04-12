@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, Check, CheckCheck, Clock, X } from "lucide-react";
+import { Bell, Check, CheckCheck, Clock, X, CalendarX } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 type Notification = {
   id:        string;
@@ -23,7 +23,7 @@ type Notification = {
   createdAt: string;
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -37,8 +37,13 @@ function timeAgo(dateStr: string) {
   return `${days}d ago`;
 }
 
+function isCancellation(subject: string | null) {
+  return subject === "Appointment Cancelled";
+}
+
 function getIcon(subject: string | null) {
   if (!subject) return <Bell className="h-4 w-4 text-muted-foreground" />;
+  if (isCancellation(subject))   return <CalendarX className="h-4 w-4 text-red-500" />;
   if (subject.startsWith("24H")) return <Clock className="h-4 w-4 text-blue-500" />;
   if (subject.startsWith("1H"))  return <Clock className="h-4 w-4 text-amber-500" />;
   return <Bell className="h-4 w-4 text-muted-foreground" />;
@@ -46,12 +51,13 @@ function getIcon(subject: string | null) {
 
 function getTitle(subject: string | null, body: string) {
   if (!subject) return body;
+  if (isCancellation(subject))   return "Appointment cancelled";
   if (subject.startsWith("24H")) return "Appointment tomorrow";
   if (subject.startsWith("1H"))  return "Appointment in 1 hour";
-  return body;
+  return subject;
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ──────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
 
@@ -61,7 +67,7 @@ export function NotificationsBell() {
   const seenIdsRef                        = useRef<Set<string>>(new Set());
   const isFirstFetchRef                   = useRef(true);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // ── Fetch ──────────────────────────────────────────────────────────────
   async function fetchNotifications() {
     try {
       const res  = await fetch("/api/notifications");
@@ -102,17 +108,14 @@ export function NotificationsBell() {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Mark one as read ───────────────────────────────────────────────────────
+  // ── Mark one as read ───────────────────────────────────────────────────
   async function markRead(id: string) {
-    setNotifications((prev) =>
-      prev.filter((n) => n.id !== id)
-    );
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
     seenIdsRef.current.add(id);
-
     await fetch(`/api/notifications/${id}`, { method: "PATCH" });
   }
 
-  // ── Mark all as read ───────────────────────────────────────────────────────
+  // ── Mark all as read ───────────────────────────────────────────────────
   async function markAllRead() {
     setNotifications([]);
     await fetch("/api/notifications/read-all", { method: "PATCH" });
@@ -120,7 +123,7 @@ export function NotificationsBell() {
 
   const unreadCount = notifications.length;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -178,42 +181,48 @@ export function NotificationsBell() {
         ) : (
           <ScrollArea className="max-h-[340px]">
             <ul className="divide-y">
-              {notifications.map((n) => (
-                <li
-                  key={n.id}
-                  className={cn(
-                    "flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50",
-                    n.status !== "READ" && "bg-muted/20"
-                  )}
-                >
-                  {/* Icon */}
-                  <div className="mt-0.5 shrink-0">
-                    {getIcon(n.subject)}
-                  </div>
-
-                  {/* Text */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium leading-tight">
-                      {getTitle(n.subject, n.body)}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-                      {n.body}
-                    </p>
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
-                      {timeAgo(n.createdAt)}
-                    </p>
-                  </div>
-
-                  {/* Dismiss */}
-                  <button
-                    onClick={() => markRead(n.id)}
-                    className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-colors"
-                    aria-label="Dismiss notification"
+              {notifications.map((n) => {
+                const cancelled = isCancellation(n.subject);
+                return (
+                  <li
+                    key={n.id}
+                    className={cn(
+                      "flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50",
+                      cancelled ? "bg-red-50/60 dark:bg-red-950/20" : n.status !== "READ" && "bg-muted/20"
+                    )}
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
+                    {/* Icon */}
+                    <div className="mt-0.5 shrink-0">
+                      {getIcon(n.subject)}
+                    </div>
+
+                    {/* Text */}
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        "text-sm font-medium leading-tight",
+                        cancelled && "text-red-700 dark:text-red-400"
+                      )}>
+                        {getTitle(n.subject, n.body)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                        {n.body}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground/70">
+                        {timeAgo(n.createdAt)}
+                      </p>
+                    </div>
+
+                    {/* Dismiss */}
+                    <button
+                      onClick={() => markRead(n.id)}
+                      className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-colors"
+                      aria-label="Dismiss notification"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </ScrollArea>
         )}

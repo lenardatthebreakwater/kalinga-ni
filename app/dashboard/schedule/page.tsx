@@ -32,7 +32,6 @@ import {
   Loader2,
   Users,
   CheckCircle2,
-  XCircle,
   Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -156,32 +155,26 @@ export default function SchedulePage() {
     }
   }
 
-  const handleToggleAvailability = async (slot: ScheduleSlot) => {
-    try {
-      const res = await fetch(`/api/schedule/${slot.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isAvailable: !slot.isAvailable }),
-      })
-      if (!res.ok) throw new Error()
-      toast.success(slot.isAvailable ? 'Marked as unavailable' : 'Marked as available')
-      setSelectedSlot(null)
-      fetchSchedule()
-    } catch {
-      toast.error('Failed to update slot')
-    }
-  }
-
   const handleDelete = async () => {
     if (!deleteTarget) return
     setSubmitting(true)
     try {
       const res = await fetch(`/api/schedule/${deleteTarget.id}`, { method: 'DELETE' })
+      const data = await res.json()
+
       if (!res.ok) {
-        const data = await res.json()
         throw new Error(data.error || 'Failed to delete slot')
       }
-      toast.success('Slot removed')
+
+      const { cancelledCount } = data
+      if (cancelledCount > 0) {
+        toast.success(
+          `Slot removed. ${cancelledCount} patient${cancelledCount > 1 ? 's have' : ' has'} been notified by email.`
+        )
+      } else {
+        toast.success('Slot removed successfully.')
+      }
+
       setDeleteTarget(null)
       setSelectedSlot(null)
       fetchSchedule()
@@ -193,20 +186,20 @@ export default function SchedulePage() {
   }
 
   const getSlotsForDate = (date: Date) => {
-  const dateStr = toInputDate(date)
-  return slots.filter((s) => {
-    // s.date is a UTC ISO string like "2025-04-09T00:00:00.000Z"
-    // Parse it and convert to local date string for comparison
-    const slotLocal = toInputDate(new Date(s.date))
-    return slotLocal === dateStr
-  })
-}
+    const dateStr = toInputDate(date)
+    return slots.filter((s) => {
+      const slotLocal = toInputDate(new Date(s.date))
+      return slotLocal === dateStr
+    })
+  }
 
   const isToday = (date: Date) => {
     const today = new Date()
-    return date.getDate() === today.getDate() &&
+    return (
+      date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
       date.getFullYear() === today.getFullYear()
+    )
   }
 
   const isPast = (date: Date) => {
@@ -215,7 +208,6 @@ export default function SchedulePage() {
     return date < today
   }
 
-  // Summary stats for the week
   const totalSlots = slots.reduce((a, s) => a + s.totalSlots, 0)
   const totalBooked = slots.reduce((a, s) => a + s.bookedCount, 0)
   const totalAvailable = slots.reduce((a, s) => a + s.availableSlots, 0)
@@ -241,7 +233,6 @@ export default function SchedulePage() {
       </div>
 
       <div className="px-8 py-6 max-w-7xl mx-auto">
-
         {/* Week stats */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
@@ -352,14 +343,11 @@ export default function SchedulePage() {
                             key={slot.id}
                             onClick={() => setSelectedSlot(slot)}
                             className={`w-full text-left rounded-xl p-2.5 border transition-all hover:shadow-md active:scale-95 ${
-                              !slot.isAvailable
-                                ? 'bg-gray-50 border-gray-200 opacity-60'
-                                : isFull
+                              isFull
                                 ? 'bg-orange-50 border-orange-200'
                                 : 'bg-[#2d7a2d]/5 border-[#2d7a2d]/20 hover:bg-[#2d7a2d]/10'
                             }`}
                           >
-                            {/* Time range */}
                             <p className="text-[11px] font-bold text-gray-700 mb-1">
                               {formatTime(slot.startTime)}
                             </p>
@@ -367,7 +355,6 @@ export default function SchedulePage() {
                               to {formatTime(slot.endTime)}
                             </p>
 
-                            {/* Fill bar */}
                             <div className="h-1 w-full rounded-full bg-gray-200 mb-1.5 overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all ${
@@ -377,7 +364,6 @@ export default function SchedulePage() {
                               />
                             </div>
 
-                            {/* Booking count */}
                             <div className="flex items-center justify-between">
                               <span className={`text-[10px] font-semibold ${
                                 isFull ? 'text-orange-600' : 'text-[#2d7a2d]'
@@ -385,13 +371,11 @@ export default function SchedulePage() {
                                 {slot.bookedCount}/{slot.totalSlots}
                               </span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                                !slot.isAvailable
-                                  ? 'bg-gray-200 text-gray-500'
-                                  : isFull
+                                isFull
                                   ? 'bg-orange-100 text-orange-600'
                                   : 'bg-[#2d7a2d]/10 text-[#2d7a2d]'
                               }`}>
-                                {!slot.isAvailable ? 'Off' : isFull ? 'Full' : 'Open'}
+                                {isFull ? 'Full' : 'Open'}
                               </span>
                             </div>
                           </button>
@@ -399,7 +383,6 @@ export default function SchedulePage() {
                       })
                     )}
 
-                    {/* Add button for future days */}
                     {!past && (
                       <button
                         onClick={() => {
@@ -424,7 +407,6 @@ export default function SchedulePage() {
           {[
             { color: 'bg-[#2d7a2d]/20 border-[#2d7a2d]/30', label: 'Available' },
             { color: 'bg-orange-100 border-orange-200', label: 'Fully booked' },
-            { color: 'bg-gray-100 border-gray-200', label: 'Unavailable' },
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-2">
               <div className={`h-3 w-3 rounded border ${item.color}`} />
@@ -450,8 +432,11 @@ export default function SchedulePage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Date</span>
                   <span className="font-semibold text-gray-800">
-                    {new Date(selectedSlot.date).toLocaleDateString('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
+                    {new Date(selectedSlot.date).toLocaleDateString('en-PH', {
+                      timeZone: 'Asia/Manila',
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric',
                     })}
                   </span>
                 </div>
@@ -494,45 +479,28 @@ export default function SchedulePage() {
                 </p>
               </div>
 
-              {/* Status */}
-              <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${
-                selectedSlot.isAvailable
-                  ? 'bg-[#2d7a2d]/8 text-[#2d7a2d]'
-                  : 'bg-gray-100 text-gray-500'
-              }`}>
-                {selectedSlot.isAvailable
-                  ? <CheckCircle2 className="h-4 w-4" />
-                  : <XCircle className="h-4 w-4" />}
-                {selectedSlot.isAvailable ? 'Accepting bookings' : 'Not accepting bookings'}
-              </div>
-
+              {/* Warning if appointments will be affected */}
               {selectedSlot.bookedCount > 0 && (
-                <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
                   <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                  {selectedSlot.bookedCount} appointment{selectedSlot.bookedCount > 1 ? 's are' : ' is'} already booked in this slot.
+                  <span>
+                    Removing this slot will <strong>cancel {selectedSlot.bookedCount} appointment{selectedSlot.bookedCount > 1 ? 's' : ''}</strong> and
+                    notify the affected patient{selectedSlot.bookedCount > 1 ? 's' : ''} by email.
+                  </span>
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  onClick={() => handleToggleAvailability(selectedSlot)}
-                  className="flex-1 rounded-xl text-sm h-9"
-                >
-                  {selectedSlot.isAvailable ? 'Mark Unavailable' : 'Mark Available'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setDeleteTarget(selectedSlot)
-                    setSelectedSlot(null)
-                  }}
-                  className="flex-1 rounded-xl text-sm h-9 bg-red-500 hover:bg-red-600 text-white"
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                  Remove
-                </Button>
-              </div>
+              {/* Action */}
+              <Button
+                onClick={() => {
+                  setDeleteTarget(selectedSlot)
+                  setSelectedSlot(null)
+                }}
+                className="w-full rounded-xl text-sm h-9 bg-red-500 hover:bg-red-600 text-white"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Remove Slot
+              </Button>
 
               <button
                 onClick={() => setSelectedSlot(null)}
@@ -591,7 +559,6 @@ export default function SchedulePage() {
               </div>
             </div>
 
-            {/* Visual duration preview */}
             {form.startTime && form.endTime && form.startTime < form.endTime && (
               <div className="bg-[#2d7a2d]/5 border border-[#2d7a2d]/20 rounded-xl px-4 py-3 text-sm text-[#2d7a2d]">
                 <p className="font-semibold mb-1">
@@ -602,7 +569,7 @@ export default function SchedulePage() {
                     (parseInt(form.endTime.split(':')[0]) * 60 + parseInt(form.endTime.split(':')[1]) -
                     (parseInt(form.startTime.split(':')[0]) * 60 + parseInt(form.startTime.split(':')[1]))) /
                     parseInt(form.slotDuration)
-                  )} patient slots × {form.slotDuration} min each
+                  )} patient slots · {form.slotDuration} min each
                 </p>
               </div>
             )}
@@ -652,24 +619,34 @@ export default function SchedulePage() {
         <AlertDialogContent className="max-w-sm">
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this slot?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget && (
-                <span>
-                  This will remove your availability on{' '}
-                  <strong>
-                    {new Date(deleteTarget.date).toLocaleDateString('en-US', {
-                      weekday: 'long', month: 'long', day: 'numeric',
-                    })}
-                  </strong>{' '}
-                  from <strong>{formatTime(deleteTarget.startTime)}</strong> to{' '}
-                  <strong>{formatTime(deleteTarget.endTime)}</strong>.
-                  {deleteTarget.bookedCount > 0 && (
-                    <span className="block mt-2 text-red-600 font-semibold">
-                      ⚠ {deleteTarget.bookedCount} patient appointment{deleteTarget.bookedCount > 1 ? 's are' : ' is'} booked in this window.
-                    </span>
-                  )}
-                </span>
-              )}
+            <AlertDialogDescription asChild>
+              <div>
+                {deleteTarget && (
+                  <span>
+                    This will permanently remove your availability on{' '}
+                    <strong>
+                      {new Date(deleteTarget.date).toLocaleDateString('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </strong>{' '}
+                    from <strong>{formatTime(deleteTarget.startTime)}</strong> to{' '}
+                    <strong>{formatTime(deleteTarget.endTime)}</strong>.
+                  </span>
+                )}
+                {deleteTarget && deleteTarget.bookedCount > 0 && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+                    <Info className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-700">
+                      <strong>{deleteTarget.bookedCount} appointment{deleteTarget.bookedCount > 1 ? 's' : ''}</strong> will be
+                      automatically cancelled and the affected patient{deleteTarget.bookedCount > 1 ? 's' : ''} will be
+                      notified by email.
+                    </p>
+                  </div>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-3 justify-end">

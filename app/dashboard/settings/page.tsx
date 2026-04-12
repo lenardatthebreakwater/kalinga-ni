@@ -114,10 +114,10 @@ function Toggle({ checked, onChange, disabled }: {
 export default function SettingsPage() {
   const { data: session, update: updateSession } = useSession()
   const { theme, setTheme } = useTheme()
-  const role           = (session?.user as any)?.role as string | undefined
-  const isAdmin        = role === 'ADMIN'
+  const role             = (session?.user as any)?.role as string | undefined
+  const isAdmin          = role === 'ADMIN'
   const isPatientOrStaff = role === 'PATIENT' || role === 'STAFF'
-  const fileInputRef   = useRef<HTMLInputElement>(null)
+  const fileInputRef     = useRef<HTMLInputElement>(null)
 
   const TABS = [
     { key: 'profile',     label: 'Profile',     icon: User,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },
@@ -127,12 +127,12 @@ export default function SettingsPage() {
     { key: 'danger',      label: 'Account',     icon: ShieldAlert, roles: ['PATIENT', 'STAFF', 'ADMIN'] },
   ].filter(t => role && t.roles.includes(role))
 
-  const [activeTab,     setActiveTab]     = useState('profile')
-  const [profile,       setProfile]       = useState<UserProfile | null>(null)
-  const [settings,      setSettings]      = useState<UserSettings | null>(null)
-  const [clinicSettings,setClinicSettings]= useState<ClinicSettings | null>(null)
-  const [apptSettings,  setApptSettings]  = useState<AppointmentSettings | null>(null)
-  const [loading,       setLoading]       = useState(true)
+  const [activeTab,      setActiveTab]      = useState('profile')
+  const [profile,        setProfile]        = useState<UserProfile | null>(null)
+  const [settings,       setSettings]       = useState<UserSettings | null>(null)
+  const [clinicSettings, setClinicSettings] = useState<ClinicSettings | null>(null)
+  const [apptSettings,   setApptSettings]   = useState<AppointmentSettings | null>(null)
+  const [loading,        setLoading]        = useState(true)
 
   const [profileForm, setProfileForm] = useState({
     firstName: '', lastName: '', phone: '',
@@ -140,9 +140,12 @@ export default function SettingsPage() {
     emergencyContact: '', emergencyPhone: '',
     specialization: '', licenseNumber: '', department: '',
   })
-  const [avatarPreview,  setAvatarPreview]  = useState<string | null>(null)
-  const [avatarBase64,   setAvatarBase64]   = useState<string | null | undefined>(undefined)
-  const [savingProfile,  setSavingProfile]  = useState(false)
+
+  // avatarPreview  — the <img> src shown in the UI (blob URL or existing URL)
+  // uploadingAvatar — true while the file is being sent to /api/user/avatar
+  const [avatarPreview,   setAvatarPreview]   = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [savingProfile,   setSavingProfile]   = useState(false)
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '', newPassword: '', confirmPassword: '',
@@ -158,13 +161,13 @@ export default function SettingsPage() {
   })
   const [savingClinic, setSavingClinic] = useState(false)
 
-  const [showDeleteDialog,   setShowDeleteDialog]   = useState(false)
-  const [deletePassword,     setDeletePassword]     = useState('')
-  const [deleteConfirmText,  setDeleteConfirmText]  = useState('')
-  const [deletingAccount,    setDeletingAccount]    = useState(false)
-  const [deleteError,        setDeleteError]        = useState('')
+  const [showDeleteDialog,  setShowDeleteDialog]  = useState(false)
+  const [deletePassword,    setDeletePassword]    = useState('')
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deletingAccount,   setDeletingAccount]   = useState(false)
+  const [deleteError,       setDeleteError]       = useState('')
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // ── Fetch ────────────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -173,7 +176,10 @@ export default function SettingsPage() {
       if (isAdmin) requests.push(fetch('/api/settings'))
 
       const responses = await Promise.all(requests)
-      const [profileData, settingsData] = await Promise.all([responses[0].json(), responses[1].json()])
+      const [profileData, settingsData] = await Promise.all([
+        responses[0].json(),
+        responses[1].json(),
+      ])
 
       setProfile(profileData)
       setSettings(settingsData)
@@ -198,91 +204,170 @@ export default function SettingsPage() {
         const c = adminData.clinic; const a = adminData.appointments
         setClinicSettings(c); setApptSettings(a)
         setClinicForm({
-          clinicName: c.clinicName ?? '', clinicEmail: c.clinicEmail ?? '',
-          clinicPhone: c.clinicPhone ?? '', clinicAddress: c.clinicAddress ?? '',
-          clinicCity: c.clinicCity ?? '', clinicZipCode: c.clinicZipCode ?? '',
+          clinicName:     c.clinicName ?? '',
+          clinicEmail:    c.clinicEmail ?? '',
+          clinicPhone:    c.clinicPhone ?? '',
+          clinicAddress:  c.clinicAddress ?? '',
+          clinicCity:     c.clinicCity ?? '',
+          clinicZipCode:  c.clinicZipCode ?? '',
           operatingHours: c.operatingHours ?? '',
         })
       }
-    } catch { toast.error('Failed to load settings') }
-    finally  { setLoading(false) }
+    } catch {
+      toast.error('Failed to load settings')
+    } finally {
+      setLoading(false)
+    }
   }, [isAdmin])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // FIX: Instead of converting to base64 and bundling with the profile PATCH,
+  // we upload the file immediately to /api/user/avatar (Vercel Blob) as soon
+  // as the user picks it. The profile PATCH no longer touches the image field.
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
     if (file.size > 2 * 1024 * 1024) { toast.error('Image must be under 2MB'); return }
     if (!file.type.startsWith('image/')) { toast.error('File must be an image'); return }
-    const reader = new FileReader()
-    reader.onload = () => { const b64 = reader.result as string; setAvatarPreview(b64); setAvatarBase64(b64) }
-    reader.readAsDataURL(file)
+
+    // Show a local object URL immediately so the user sees the preview
+    const localPreview = URL.createObjectURL(file)
+    setAvatarPreview(localPreview)
+    setUploadingAvatar(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/user/avatar', { method: 'POST', body: formData })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error ?? 'Upload failed')
+      }
+
+      const { url } = await res.json()
+
+      // Replace the local object URL with the real Vercel Blob URL
+      setAvatarPreview(url)
+      await updateSession({ image: url })
+      toast.success('Profile picture updated')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload photo')
+      // Roll back preview to the previous image
+      setAvatarPreview(profile?.image ?? null)
+    } finally {
+      setUploadingAvatar(false)
+      // Reset the input so the same file can be re-selected if needed
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleRemoveAvatar = async () => {
+    setUploadingAvatar(true)
+    try {
+      const res = await fetch('/api/user/avatar', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to remove photo')
+      setAvatarPreview(null)
+      await updateSession({ image: null })
+      toast.success('Profile picture removed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to remove photo')
+    } finally {
+      setUploadingAvatar(false)
+    }
   }
 
   const handleSaveProfile = async () => {
     setSavingProfile(true)
     try {
       const res = await fetch('/api/user/profile', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profileForm, ...(avatarBase64 !== undefined && { image: avatarBase64 }) }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // No image field here — avatar is handled separately by /api/user/avatar
+        body: JSON.stringify(profileForm),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       const data = await res.json()
-      await updateSession({ name: data.name, ...(avatarBase64 !== undefined && { image: avatarBase64 }) })
-      toast.success('Profile updated'); setAvatarBase64(undefined); fetchData()
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to save profile') }
-    finally { setSavingProfile(false) }
+      await updateSession({ name: data.name })
+      toast.success('Profile updated')
+      fetchData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save profile')
+    } finally {
+      setSavingProfile(false)
+    }
   }
 
   const handleSavePassword = async () => {
     setPasswordError('')
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      setPasswordError('All fields are required'); return }
+      setPasswordError('All fields are required'); return
+    }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordError('New passwords do not match'); return }
+      setPasswordError('New passwords do not match'); return
+    }
     if (passwordForm.newPassword.length < 8) {
-      setPasswordError('New password must be at least 8 characters'); return }
+      setPasswordError('New password must be at least 8 characters'); return
+    }
     setSavingPassword(true)
     try {
       const res = await fetch('/api/user/password', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword,
+        }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       toast.success('Password changed successfully')
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
-    } catch (err) { setPasswordError(err instanceof Error ? err.message : 'Failed to change password') }
-    finally { setSavingPassword(false) }
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Failed to change password')
+    } finally {
+      setSavingPassword(false)
+    }
   }
 
   const handleSaveSettings = async (updates: Partial<UserSettings>) => {
     if (!settings) return
-    setSavingSettings(true); setSettings({ ...settings, ...updates })
+    setSavingSettings(true)
+    setSettings({ ...settings, ...updates })
     try {
       const res = await fetch('/api/user/settings', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
       if (!res.ok) throw new Error()
       toast.success('Preferences saved')
-    } catch { toast.error('Failed to save preferences'); fetchData() }
-    finally { setSavingSettings(false) }
+    } catch {
+      toast.error('Failed to save preferences')
+      fetchData()
+    } finally {
+      setSavingSettings(false)
+    }
   }
 
   const handleSaveClinic = async () => {
     setSavingClinic(true)
     try {
       const res = await fetch('/api/settings', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: 'clinic', data: clinicForm }),
       })
       if (!res.ok) throw new Error()
       toast.success('Clinic information saved')
-    } catch { toast.error('Failed to save clinic settings') }
-    finally { setSavingClinic(false) }
+    } catch {
+      toast.error('Failed to save clinic settings')
+    } finally {
+      setSavingClinic(false)
+    }
   }
 
   const handleDeleteAccount = async () => {
@@ -292,17 +377,21 @@ export default function SettingsPage() {
     setDeletingAccount(true)
     try {
       const res = await fetch('/api/user/delete', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: deletePassword }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       toast.success('Account deleted. Signing out...')
       await signOut({ redirect: true, redirectUrl: '/' })
-    } catch (err) { setDeleteError(err instanceof Error ? err.message : 'Failed to delete account') }
-    finally { setDeletingAccount(false) }
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete account')
+    } finally {
+      setDeletingAccount(false)
+    }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -360,19 +449,38 @@ export default function SettingsPage() {
                               <span className="text-2xl font-bold text-[#2d7a2d]">{initials}</span>
                             </div>
                         }
-                        <button onClick={() => fileInputRef.current?.click()}
-                          className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[#2d7a2d] text-white flex items-center justify-center shadow-md hover:bg-[#245f24] transition">
-                          <Camera className="h-3.5 w-3.5" />
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploadingAvatar}
+                          className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[#2d7a2d] text-white flex items-center justify-center shadow-md hover:bg-[#245f24] transition disabled:opacity-60"
+                        >
+                          {uploadingAvatar
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Camera className="h-3.5 w-3.5" />
+                          }
                         </button>
-                        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleAvatarChange}
+                        />
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-700">{profileForm.firstName} {profileForm.lastName}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{profile?.email}</p>
                         <p className="text-xs text-gray-300 mt-2">JPG, PNG or WEBP · Max 2MB</p>
-                        {avatarPreview && (
-                          <button onClick={() => { setAvatarPreview(null); setAvatarBase64(null) }}
-                            className="text-xs text-red-400 hover:text-red-600 mt-1 transition">Remove photo</button>
+                        {avatarPreview && !uploadingAvatar && (
+                          <button
+                            onClick={handleRemoveAvatar}
+                            className="text-xs text-red-400 hover:text-red-600 mt-1 transition"
+                          >
+                            Remove photo
+                          </button>
+                        )}
+                        {uploadingAvatar && (
+                          <p className="text-xs text-gray-400 mt-1">Uploading...</p>
                         )}
                       </div>
                     </div>
@@ -460,7 +568,7 @@ export default function SettingsPage() {
                 )}
 
                 <div className="flex justify-end">
-                  <Button onClick={handleSaveProfile} disabled={savingProfile}
+                  <Button onClick={handleSaveProfile} disabled={savingProfile || uploadingAvatar}
                     className="bg-[#2d7a2d] hover:bg-[#245f24] text-white rounded-xl px-6">
                     {savingProfile ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : <><Check className="h-4 w-4 mr-2" />Save Profile</>}
                   </Button>
@@ -553,7 +661,7 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* ── Notifications — PATIENT and STAFF only ── */}
+                {/* Notifications — PATIENT and STAFF only */}
                 {isPatientOrStaff && (
                   <Card className="border-0 shadow-sm rounded-2xl bg-white">
                     <CardHeader className="pb-2">
@@ -566,7 +674,6 @@ export default function SettingsPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
-                      {/* Email */}
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="text-sm font-medium text-gray-700">Email Notifications</p>
@@ -580,10 +687,7 @@ export default function SettingsPage() {
                           onChange={(v) => handleSaveSettings({ emailNotifications: v })}
                         />
                       </div>
-
                       <div className="border-t border-gray-50" />
-
-                      {/* In-app */}
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="text-sm font-medium text-gray-700">In-App Notifications</p>
@@ -597,7 +701,6 @@ export default function SettingsPage() {
                           onChange={(v) => handleSaveSettings({ appNotifications: v })}
                         />
                       </div>
-
                       <p className="text-xs text-gray-400 pt-1 border-t border-gray-50">
                         You'll be notified 24 hours and 1 hour before each scheduled appointment.
                       </p>

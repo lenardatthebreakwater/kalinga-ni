@@ -55,6 +55,7 @@ export async function GET() {
 }
 
 // PATCH /api/user/profile
+// Handles text fields only. Avatar uploads are handled by /api/user/avatar.
 export async function PATCH(request: NextRequest) {
   try {
     const session = await auth()
@@ -70,7 +71,6 @@ export async function PATCH(request: NextRequest) {
       firstName,
       lastName,
       phone,
-      image,
       // Patient-specific
       dateOfBirth,
       gender,
@@ -84,22 +84,13 @@ export async function PATCH(request: NextRequest) {
       department,
     } = body
 
-    // Validate image size if provided (base64 max ~2MB)
-    if (image && image.length > 2 * 1024 * 1024 * 1.37) {
-      return NextResponse.json(
-        { error: 'Profile picture is too large. Please use an image under 2MB.' },
-        { status: 400 }
-      )
-    }
-
-    // Update base user fields
+    // Update base user fields (no image — that goes through /api/user/avatar)
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
         ...(firstName && { firstName: firstName.trim() }),
         ...(lastName && { lastName: lastName.trim() }),
         ...(phone !== undefined && { phone: phone?.trim() || null }),
-        ...(image !== undefined && { image }),
       },
     })
 
@@ -137,7 +128,10 @@ export async function PATCH(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, name: `${updatedUser.firstName} ${updatedUser.lastName}` })
+    return NextResponse.json({
+      success: true,
+      name: `${updatedUser.firstName} ${updatedUser.lastName}`,
+    })
   } catch (error) {
     console.error('Error updating profile:', error)
     return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 })

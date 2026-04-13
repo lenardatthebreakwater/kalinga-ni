@@ -85,24 +85,37 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Build slot start/end in UTC (times were stored as UTC, matching how POST created them)
+    // slot.startTime / slot.endTime are "HH:mm" strings in PHILIPPINE TIME (PHT = UTC+8),
+    // because that's what the staff typed in their browser and we stored verbatim.
+    //
+    // slot.date is UTC midnight of the PHT calendar date (e.g. 2026-04-14T00:00:00Z
+    // represents April 14 PHT).
+    //
+    // Appointments are stored by the booking flow in UTC.
+    // A patient booking "09:00 PHT" lands in the DB as "01:00 UTC" (PHT − 8h).
+    //
+    // So to find matching appointments we must convert the HH:mm PHT times to UTC
+    // by subtracting the PHT offset (8 hours = 480 minutes).
+
+    const PHT_OFFSET_MS = 8 * 60 * 60 * 1000 // 8 hours in ms
+
     const [startHour, startMin] = slot.startTime.split(':').map(Number)
-    const [endHour, endMin] = slot.endTime.split(':').map(Number)
+    const [endHour, endMin]     = slot.endTime.split(':').map(Number)
 
-    const slotStart = new Date(slot.date)
-    slotStart.setUTCHours(startHour, startMin, 0, 0)
+    // Build the PHT wall-clock instant on the slot's date, then convert to UTC
+    const slotDateMs = slot.date.getTime() // already UTC midnight of the PHT date
 
-    const slotEnd = new Date(slot.date)
-    slotEnd.setUTCHours(endHour, endMin, 0, 0)
+    const slotStart = new Date(slotDateMs + (startHour * 60 + startMin) * 60_000 - PHT_OFFSET_MS)
+    const slotEnd   = new Date(slotDateMs + (endHour   * 60 + endMin)   * 60_000 - PHT_OFFSET_MS)
 
-    // Find all SCHEDULED appointments that fall within this slot
+    // Find all SCHEDULED appointments that fall within this slot window (UTC)
     const bookedAppointments = await prisma.appointment.findMany({
       where: {
         staffId: slot.staffId,
         status: 'SCHEDULED',
         appointmentDate: {
           gte: slotStart,
-          lt: slotEnd,
+          lt:  slotEnd,
         },
       },
       include: {
@@ -118,8 +131,7 @@ export async function DELETE(
     // Cancel each appointment, create a notification, and send an email
     await Promise.all(
       bookedAppointments.map(async (appointment) => {
-        const patient = appointment.patient
-        const patientUser = patient.user
+        const patientUser = appointment.patient.user
 
         // 1. Mark appointment as CANCELLED with a reason in notes
         await prisma.appointment.update({
@@ -135,7 +147,7 @@ export async function DELETE(
         // 2. Create an in-app notification bell entry for the patient
         await prisma.notificationLog.create({
           data: {
-            userId: patientUser.id,
+            userId:  patientUser.id,
             channel: 'APP',
             subject: 'Appointment Cancelled',
             body: `Your appointment with ${staffName} on ${appointment.appointmentDate.toLocaleDateString(
@@ -155,22 +167,21 @@ export async function DELETE(
         // 3. Send cancellation email (non-blocking — log failure but don't abort)
         try {
           await sendSlotCancelledEmail({
-            toEmail: patientUser.email,
-            patientName: `${patientUser.firstName} ${patientUser.lastName}`,
+            toEmail:         patientUser.email,
+            patientName:     `${patientUser.firstName} ${patientUser.lastName}`,
             staffName,
             appointmentDate: appointment.appointmentDate,
-            reason: appointment.reason,
+            reason:          appointment.reason,
           })
 
-          // Mark notification as SENT (email)
           await prisma.notificationLog.create({
             data: {
-              userId: patientUser.id,
+              userId:  patientUser.id,
               channel: 'EMAIL',
               subject: 'Your appointment has been cancelled',
-              body: `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} cancelled.`,
-              status: 'SENT',
-              sentAt: new Date(),
+              body:    `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} cancelled.`,
+              status:  'SENT',
+              sentAt:  new Date(),
             },
           })
         } catch (emailErr) {
@@ -180,11 +191,11 @@ export async function DELETE(
           )
           await prisma.notificationLog.create({
             data: {
-              userId: patientUser.id,
+              userId:  patientUser.id,
               channel: 'EMAIL',
               subject: 'Your appointment has been cancelled',
-              body: `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} cancelled.`,
-              status: 'FAILED',
+              body:    `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} cancelled.`,
+              status:  'FAILED',
             },
           })
         }

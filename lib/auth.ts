@@ -12,20 +12,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
-
         // Wait for DB to be ready (handles Turbopack cold start)
         try {
           await prisma.$connect()
         } catch {
           throw new Error('Database connection failed. Please try again.')
         }
-
         const user = await prisma.user.findUnique({
           where: { email: credentials.email as string },
         })
-
         if (!user) return null
-
         if (user.status && user.status !== 'ACTIVE') {
           throw new Error(
             user.status === 'SUSPENDED'
@@ -35,14 +31,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               : 'This account no longer exists.'
           )
         }
-
         const isPasswordValid = await bcrypt.compare(
           credentials.password as string,
           user.password
         )
-
         if (!isPasswordValid) return null
-
         return {
           id: user.id,
           email: user.email,
@@ -59,37 +52,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = (user as any).role
         token.id = user.id
       }
-
       if (trigger === 'update' && session) {
         if (session.name) token.name = session.name
         // Bust the image cache so it re-fetches on next session read
         token.imageFetched = false
         token.cachedImage = undefined
       }
-
       return token
     },
-
     async session({ session, token }) {
       if (session.user) {
         const u = session.user as any
         u.role = token.role as string
         u.id = token.id as string
 
-        // Cache the image in the token to avoid a DB hit on every session read
-        if (token.imageFetched) {
-          u.image = (token.cachedImage as string | null) ?? null
-        } else {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: { image: true },
-          })
-          u.image = dbUser?.image ?? null
-          token.cachedImage = u.image
-          token.imageFetched = true
-        }
-      }
+        // Always verify the user still exists in the DB.
+        // If they've been deleted (e.g. after a DB reset), invalidate the session
+        // so they're redirected to login automatically — no manual cookie clearing needed.
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { image: true, status: true },
+        })
 
+        if (!dbUser || dbUser.status === 'DELETED') {
+          // Returning null invalidates the session
+          return null as any
+        }
+
+        // Also re-check status on every request so suspended/banned users
+        // are kicked out immediately without waiting for their session to expire
+        if (dbUser.status !== 'ACTIVE') {
+          return null as any
+        }
+
+        u.image = dbUser.image ?? null
+        token.cachedImage = u.image
+        token.imageFetched = true
+      }
       return session
     },
   },

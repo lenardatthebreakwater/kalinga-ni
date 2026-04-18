@@ -9,6 +9,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { AlertCircle, CalendarCheck, Loader2, User, Calendar, Clock, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+const REASON_MAX = 300
+
 interface ScheduleSlot {
   id: string
   date: string
@@ -47,11 +49,10 @@ export default function BookAppointmentPage() {
   const [error, setError] = useState('')
 
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>('')      // 'yyyy-mm-dd'
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
   const [reason, setReason] = useState('')
 
-  // Load staff with available schedules
   useEffect(() => {
     const fetchStaff = async () => {
       try {
@@ -68,7 +69,6 @@ export default function BookAppointmentPage() {
     fetchStaff()
   }, [])
 
-  // Load time slots when a date is selected
   useEffect(() => {
     if (!selectedStaff || !selectedDate) return
     const fetchSlots = async () => {
@@ -91,10 +91,19 @@ export default function BookAppointmentPage() {
     fetchSlots()
   }, [selectedStaff, selectedDate])
 
-  // Get unique available dates for the selected staff
   const availableDates = selectedStaff
     ? selectedStaff.schedules.map((s) => s.date.split('T')[0])
     : []
+
+  const handleReasonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (e.target.value.length <= REASON_MAX) setReason(e.target.value)
+  }
+
+  const charsLeft = REASON_MAX - reason.length
+  const charsLeftColor =
+    charsLeft <= 20 ? 'text-red-500' :
+    charsLeft <= 50 ? 'text-amber-500' :
+    'text-gray-400'
 
   const handleSubmit = async () => {
     if (!selectedStaff || !selectedSlot || !reason.trim()) {
@@ -133,8 +142,8 @@ export default function BookAppointmentPage() {
 
   const steps: { key: Step; label: string; icon: typeof User }[] = [
     { key: 'doctor', label: 'Doctor', icon: User },
-    { key: 'date', label: 'Date', icon: Calendar },
-    { key: 'time', label: 'Time', icon: Clock },
+    { key: 'date',   label: 'Date',   icon: Calendar },
+    { key: 'time',   label: 'Time',   icon: Clock },
     { key: 'reason', label: 'Reason', icon: CalendarCheck },
   ]
 
@@ -175,9 +184,7 @@ export default function BookAppointmentPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800 mb-1">Book an Appointment</h1>
-          <p className="text-gray-500 text-sm">
-            Schedule with one of our available doctors
-          </p>
+          <p className="text-gray-500 text-sm">Schedule with one of our available doctors</p>
         </div>
 
         {/* Step Indicator */}
@@ -460,14 +467,27 @@ export default function BookAppointmentPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2 mb-6">
-                <Label htmlFor="reason">Reason <span className="text-red-500">*</span></Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="reason">
+                    Reason <span className="text-red-500">*</span>
+                  </Label>
+                  <span className={cn('text-xs font-medium tabular-nums', charsLeftColor)}>
+                    {charsLeft} / {REASON_MAX}
+                  </span>
+                </div>
                 <Textarea
                   id="reason"
                   placeholder="e.g. Routine check-up, follow-up for fever, etc."
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={handleReasonChange}
+                  maxLength={REASON_MAX}
                   className="min-h-32 resize-none"
                 />
+                {charsLeft <= 20 && (
+                  <p className="text-xs text-red-500">
+                    {charsLeft === 0 ? 'Character limit reached.' : `${charsLeft} character${charsLeft !== 1 ? 's' : ''} remaining.`}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3">

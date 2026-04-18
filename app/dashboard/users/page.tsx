@@ -235,23 +235,15 @@ export default function UsersPage() {
                               Reactivate
                             </button>
                           )}
+                          {/* Reset Password button hidden — functionality preserved below */}
                           {user.status !== 'DELETED' && (
-                            <>
-                              <button
-                                onClick={() => openModal('reset', user)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
-                              >
-                                <KeyRound className="h-3.5 w-3.5" />
-                                Reset Password
-                              </button>
-                              <button
-                                onClick={() => openModal('delete', user)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Delete
-                              </button>
-                            </>
+                            <button
+                              onClick={() => openModal('delete', user)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 transition"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Delete
+                            </button>
                           )}
                         </div>
                       )}
@@ -312,6 +304,7 @@ export default function UsersPage() {
                 </p>
               </>
             )}
+            {/* Reset Password modal — kept intact, triggered programmatically if re-enabled */}
             {modal.type === 'reset' && (
               <>
                 <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center mx-auto mb-4">

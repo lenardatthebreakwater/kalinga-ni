@@ -32,7 +32,15 @@ function formatTime(date: Date) {
   });
 }
 
-// ── Email Templates ────────────────────────────────────────────────────────────
+// Format a plain "HH:mm" PHT string to 12-hour display
+function formatTimeStr(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+// ── Email Templates ───────────────────────────────────────────────────────────
 
 function buildVerificationEmail(patientName: string, verificationUrl: string) {
   return {
@@ -289,7 +297,110 @@ function buildAppointmentConfirmationEmail(
   };
 }
 
-// ── Send Functions ─────────────────────────────────────────────────────────────
+// NEW: Schedule request approved email (sent to staff)
+function buildScheduleRequestApprovedEmail(
+  staffName: string,
+  date: Date,
+  startTime: string,
+  endTime: string
+) {
+  const dateLabel = date.toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return {
+    subject: `Your availability request for ${dateLabel} has been approved`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+        <div style="background: #2d7a2d; padding: 24px 32px; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 20px;">${CLINIC_NAME}</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 32px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+          <p style="font-size: 16px; margin-top: 0;">Hi <strong>${staffName}</strong>,</p>
+          <p style="font-size: 15px; color: #374151;">
+            Great news! Your availability request has been <strong style="color: #2d7a2d;">approved</strong>.
+            Patients can now book appointments during this time window.
+          </p>
+
+          <div style="background: white; border: 1px solid #d1fae5; border-left: 4px solid #2d7a2d; border-radius: 6px; padding: 20px; margin: 24px 0;">
+            <p style="margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Approved Schedule</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px; width: 120px;">Date</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${dateLabel}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Time window</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${formatTimeStr(startTime)} – ${formatTimeStr(endTime)}</td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="font-size: 14px; color: #6b7280;">
+            You can view your schedule in the staff portal.
+          </p>
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">— The ${CLINIC_NAME} Team</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+// NEW: Schedule request rejected email (sent to staff)
+function buildScheduleRequestRejectedEmail(
+  staffName: string,
+  date: Date,
+  startTime: string,
+  endTime: string
+) {
+  const dateLabel = date.toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return {
+    subject: `Your availability request for ${dateLabel} was not approved`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+        <div style="background: #b91c1c; padding: 24px 32px; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 20px;">${CLINIC_NAME}</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 32px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+          <p style="font-size: 16px; margin-top: 0;">Hi <strong>${staffName}</strong>,</p>
+          <p style="font-size: 15px; color: #374151;">
+            Unfortunately, your availability request has <strong style="color: #b91c1c;">not been approved</strong>.
+            Please contact the clinic admin for more information or to submit a new request.
+          </p>
+
+          <div style="background: white; border: 1px solid #fecaca; border-left: 4px solid #b91c1c; border-radius: 6px; padding: 20px; margin: 24px 0;">
+            <p style="margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Rejected Request</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px; width: 120px;">Date</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${dateLabel}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Time window</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${formatTimeStr(startTime)} – ${formatTimeStr(endTime)}</td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">— The ${CLINIC_NAME} Team</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+// ── Send Functions ────────────────────────────────────────────────────────────
 
 export async function sendVerificationEmail({
   toEmail,
@@ -422,5 +533,57 @@ export async function sendSlotCancelledEmail({
   });
 
   if (error) throw new Error(`Resend error (slot cancelled): ${error.message}`);
+  return data;
+}
+
+// NEW: Send schedule request approved email to staff
+export async function sendScheduleRequestApprovedEmail({
+  toEmail,
+  staffName,
+  date,
+  startTime,
+  endTime,
+}: {
+  toEmail: string;
+  staffName: string;
+  date: Date;
+  startTime: string;
+  endTime: string;
+}) {
+  const { subject, html } = buildScheduleRequestApprovedEmail(staffName, date, startTime, endTime);
+  const { data, error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: resolveRecipient(toEmail),
+    subject,
+    html,
+  });
+
+  if (error) throw new Error(`Resend error (request approved): ${error.message}`);
+  return data;
+}
+
+// NEW: Send schedule request rejected email to staff
+export async function sendScheduleRequestRejectedEmail({
+  toEmail,
+  staffName,
+  date,
+  startTime,
+  endTime,
+}: {
+  toEmail: string;
+  staffName: string;
+  date: Date;
+  startTime: string;
+  endTime: string;
+}) {
+  const { subject, html } = buildScheduleRequestRejectedEmail(staffName, date, startTime, endTime);
+  const { data, error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: resolveRecipient(toEmail),
+    subject,
+    html,
+  });
+
+  if (error) throw new Error(`Resend error (request rejected): ${error.message}`);
   return data;
 }

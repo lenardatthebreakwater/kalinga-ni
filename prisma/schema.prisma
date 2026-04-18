@@ -95,20 +95,21 @@ model Staff {
   updatedAt DateTime @updatedAt
 
   // Relations
-  appointments Appointment[]
-  schedules    StaffSchedule[]
+  appointments      Appointment[]
+  schedules         StaffSchedule[]
+  scheduleRequests  ScheduleRequest[]
 }
 
-// Weekly schedule slots set manually by staff each week
+// Weekly schedule slots approved by admin
 model StaffSchedule {
   id      String @id @default(cuid())
   staffId String
   staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
-  // The specific date this slot is available (not recurring — set per week)
+  // The specific date this slot is available (stored as UTC midnight of the PHT calendar date)
   date      DateTime
 
-  // Start and end time stored as "HH:mm" strings (e.g. "09:00", "17:00")
+  // Start and end time stored as "HH:mm" strings in Philippine Time (PHT)
   startTime String
   endTime   String
 
@@ -122,6 +123,33 @@ model StaffSchedule {
   updatedAt DateTime @updatedAt
 
   @@index([staffId])
+  @@index([date])
+}
+
+// Availability requests submitted by staff, reviewed by admin
+model ScheduleRequest {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  // The specific date being requested (stored as UTC midnight of the PHT calendar date)
+  date      DateTime
+
+  // Start and end time stored as "HH:mm" strings in Philippine Time (PHT)
+  startTime String
+  endTime   String
+
+  // Slot duration in minutes
+  slotDuration Int @default(30)
+
+  // PENDING | APPROVED | REJECTED
+  status String @default("PENDING")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffId])
+  @@index([status])
   @@index([date])
 }
 
@@ -275,4 +303,3 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
-

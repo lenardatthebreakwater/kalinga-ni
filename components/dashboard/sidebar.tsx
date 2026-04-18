@@ -24,7 +24,7 @@ export default function Sidebar() {
     { href: '/dashboard/announcements',  label: 'Announcements',  icon: Megaphone,       roles: ['PATIENT', 'STAFF', 'ADMIN'] },
     { href: '/dashboard/appointments',   label: 'Appointments',   icon: Calendar,        roles: ['PATIENT', 'STAFF'] },
     { href: '/dashboard/medical-records',label: 'Medical Records',icon: FileText,        roles: ['PATIENT'] },
-    { href: '/dashboard/schedule',       label: 'My Schedule',    icon: CalendarDays,    roles: ['STAFF'] },
+    { href: '/dashboard/schedule',       label: 'My Schedule',    icon: CalendarDays,    roles: ['STAFF', 'ADMIN'] },
     { href: '/dashboard/patients',       label: 'Patients',       icon: Users,           roles: ['STAFF', 'ADMIN'] },
     { href: '/dashboard/users',          label: 'Users',          icon: Users,           roles: ['ADMIN'] },
     { href: '/dashboard/settings',       label: 'Settings',       icon: Settings,        roles: ['PATIENT', 'STAFF', 'ADMIN'] },

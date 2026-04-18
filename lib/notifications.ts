@@ -32,7 +32,47 @@ function formatTime(date: Date) {
   });
 }
 
-// ── Email Templates ──────────────────────────────────────────────────────────
+// ── Email Templates ────────────────────────────────────────────────────────────
+
+function buildVerificationEmail(patientName: string, verificationUrl: string) {
+  return {
+    subject: `Verify your Kalinga-ni account`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+        <div style="background: #2d7a2d; padding: 24px 32px; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 20px;">${CLINIC_NAME}</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 32px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+          <p style="font-size: 16px; margin-top: 0;">Hi <strong>${patientName}</strong>,</p>
+          <p style="font-size: 15px; color: #374151;">
+            Welcome to Kalinga-ni! Please verify your email address to activate your account and start booking appointments.
+          </p>
+
+          <div style="text-align: center; margin: 32px 0;">
+            <a href="${verificationUrl}"
+              style="display: inline-block; background: #2d7a2d; color: white; font-size: 15px; font-weight: 600;
+                     padding: 14px 32px; border-radius: 8px; text-decoration: none; letter-spacing: 0.01em;">
+              Verify My Account
+            </a>
+          </div>
+
+          <p style="font-size: 13px; color: #6b7280; text-align: center;">
+            This link expires in <strong>24 hours</strong>. If you did not create an account, you can safely ignore this email.
+          </p>
+
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+
+          <p style="font-size: 12px; color: #9ca3af; text-align: center; margin: 0;">
+            If the button above doesn't work, copy and paste this link into your browser:<br />
+            <a href="${verificationUrl}" style="color: #2d7a2d; word-break: break-all;">${verificationUrl}</a>
+          </p>
+
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0; margin-top: 24px;">— The ${CLINIC_NAME} Team</p>
+        </div>
+      </div>
+    `,
+  };
+}
 
 function build24hEmail(patientName: string, staffName: string, appointmentDate: Date, reason: string) {
   const date = formatDate(appointmentDate);
@@ -190,7 +230,120 @@ function buildSlotCancelledEmail(
   };
 }
 
-// ── Send Functions ───────────────────────────────────────────────────────────
+function buildAppointmentConfirmationEmail(
+  patientName: string,
+  staffName: string,
+  appointmentDate: Date,
+  duration: number,
+  reason: string
+) {
+  const date = formatDate(appointmentDate);
+  const time = formatTime(appointmentDate);
+
+  return {
+    subject: `Appointment Confirmed — ${date}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+        <div style="background: #2d7a2d; padding: 24px 32px; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 20px;">${CLINIC_NAME}</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 32px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+          <p style="font-size: 16px; margin-top: 0;">Hi <strong>${patientName}</strong>,</p>
+          <p style="font-size: 15px; color: #374151;">
+            Your appointment has been <strong style="color: #2d7a2d;">successfully booked</strong>. Here are your appointment details:
+          </p>
+
+          <div style="background: white; border: 1px solid #d1fae5; border-left: 4px solid #2d7a2d; border-radius: 6px; padding: 20px; margin: 24px 0;">
+            <p style="margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Appointment Details</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px; width: 100px;">Date</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${date}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Time</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${time}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Duration</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${duration} minutes</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Doctor</td>
+                <td style="padding: 6px 0; font-size: 14px; font-weight: 600;">${staffName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Reason</td>
+                <td style="padding: 6px 0; font-size: 14px;">${reason}</td>
+              </tr>
+            </table>
+          </div>
+
+          <p style="font-size: 14px; color: #6b7280;">
+            Please arrive on time. If you need to cancel or reschedule, you can do so through the patient portal before your appointment.
+          </p>
+          <p style="font-size: 14px; color: #374151; margin-bottom: 0;">— The ${CLINIC_NAME} Team</p>
+        </div>
+      </div>
+    `,
+  };
+}
+
+// ── Send Functions ─────────────────────────────────────────────────────────────
+
+export async function sendVerificationEmail({
+  toEmail,
+  name,
+  verificationUrl,
+}: {
+  toEmail: string;
+  name: string;
+  verificationUrl: string;
+}) {
+  const { subject, html } = buildVerificationEmail(name, verificationUrl);
+  const { data, error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: resolveRecipient(toEmail),
+    subject,
+    html,
+  });
+
+  if (error) throw new Error(`Resend error (verification): ${error.message}`);
+  return data;
+}
+
+export async function sendAppointmentConfirmationEmail({
+  toEmail,
+  patientName,
+  staffName,
+  appointmentDate,
+  duration,
+  reason,
+}: {
+  toEmail: string;
+  patientName: string;
+  staffName: string;
+  appointmentDate: Date;
+  duration: number;
+  reason: string;
+}) {
+  const { subject, html } = buildAppointmentConfirmationEmail(
+    patientName,
+    staffName,
+    appointmentDate,
+    duration,
+    reason
+  );
+  const { data, error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to: resolveRecipient(toEmail),
+    subject,
+    html,
+  });
+
+  if (error) throw new Error(`Resend error (confirmation): ${error.message}`);
+  return data;
+}
 
 export async function send24hReminder({
   toEmail,

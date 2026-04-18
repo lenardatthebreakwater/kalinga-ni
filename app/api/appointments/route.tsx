@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { sendAppointmentConfirmationEmail } from '@/lib/notifications'
 
 // Helper: convert a UTC Date to Philippine Time (UTC+8) minutes since midnight.
 // Used to compare UTC-stored datetimes against PHT "HH:mm" schedule strings.
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // FIX: Schedule startTime/endTime strings are stored in PHT ("HH:mm").
+    // Schedule startTime/endTime strings are stored in PHT ("HH:mm").
     // Convert the UTC appointment datetime to PHT minutes before comparing.
     const slotStartMins = toPhilippineMinutes(newStart)
     const slotEndMins = toPhilippineMinutes(newEnd)
@@ -139,6 +140,70 @@ export async function POST(request: NextRequest) {
         staff: { include: { user: true } },
       },
     })
+
+    const patientUser = appointment.patient.user
+    const staffUser = appointment.staff.user
+    const staffName = `${staffUser.firstName} ${staffUser.lastName}`
+    const patientName = `${patientUser.firstName} ${patientUser.lastName}`
+
+    // 1. In-app notification bell entry for the patient
+    try {
+      await prisma.notificationLog.create({
+        data: {
+          userId: patientUser.id,
+          channel: 'APP',
+          subject: 'Appointment Confirmed',
+          body: `Your appointment with ${staffName} on ${appointment.appointmentDate.toLocaleDateString(
+            'en-PH',
+            { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' }
+          )} at ${appointment.appointmentDate.toLocaleTimeString('en-PH', {
+            timeZone: 'Asia/Manila',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          })} has been confirmed.`,
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      })
+    } catch (notifErr) {
+      // Non-blocking — log but don't fail the booking
+      console.error('Failed to create in-app notification:', notifErr)
+    }
+
+    // 2. Confirmation email to the patient
+    try {
+      await sendAppointmentConfirmationEmail({
+        toEmail: patientUser.email,
+        patientName,
+        staffName,
+        appointmentDate: appointment.appointmentDate,
+        duration: appointment.duration,
+        reason: appointment.reason,
+      })
+
+      await prisma.notificationLog.create({
+        data: {
+          userId: patientUser.id,
+          channel: 'EMAIL',
+          subject: 'Appointment Confirmed',
+          body: `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} confirmed.`,
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      })
+    } catch (emailErr) {
+      console.error('Failed to send confirmation email:', emailErr)
+      await prisma.notificationLog.create({
+        data: {
+          userId: patientUser.id,
+          channel: 'EMAIL',
+          subject: 'Appointment Confirmed',
+          body: `Appointment on ${appointment.appointmentDate.toISOString()} with ${staffName} confirmed.`,
+          status: 'FAILED',
+        },
+      })
+    }
 
     return NextResponse.json(appointment, { status: 201 })
   } catch (error) {

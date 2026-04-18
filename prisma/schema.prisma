@@ -17,19 +17,32 @@ model User {
   firstName String
   lastName  String
   role      String   @default("PATIENT") // PATIENT, STAFF, or ADMIN
-  status    String   @default("ACTIVE")  // ACTIVE, SUSPENDED, BANNED, DELETED
+  status    String   @default("PENDING") // PENDING, ACTIVE, SUSPENDED, BANNED, DELETED
   phone     String?
   image     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
-  patient       Patient?
-  staff         Staff?
-  settings      UserSettings?
-  announcements Announcement[]
-  auditLogs     AuditLog[]
-  notifications NotificationLog[]
+  patient                 Patient?
+  staff                   Staff?
+  settings                UserSettings?
+  announcements           Announcement[]
+  auditLogs               AuditLog[]
+  notifications           NotificationLog[]
+  emailVerificationTokens EmailVerificationToken[]
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
 }
 
 model UserSettings {
@@ -262,3 +275,4 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
+

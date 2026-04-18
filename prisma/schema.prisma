@@ -70,6 +70,8 @@ model Patient {
   dateOfBirth      DateTime?
   gender           String?
   bloodType        String?
+  height           Float?    // in centimeters
+  weight           Float?    // in kilograms
   allergies        String?
   emergencyContact String?
   emergencyPhone   String?
@@ -303,3 +305,4 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
+

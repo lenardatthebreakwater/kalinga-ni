@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Users, Phone, UserRound, Calendar, FileText,
   X, ChevronRight, AlertCircle, Stethoscope, Clock,
-  Search, Droplets,
+  Search, Droplets, ShieldAlert, History, Ruler, Weight,
 } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import AddMedicalRecord from '@/components/appointments/add-medical-record'
@@ -16,6 +16,9 @@ type Patient = {
   dateOfBirth: string | null
   gender: string | null
   bloodType: string | null
+  height: number | null  // cm
+  weight: number | null  // kg
+  allergies: string | null
   createdAt: string
   user: {
     firstName: string
@@ -63,6 +66,29 @@ const STATUS_COLORS: Record<string, string> = {
   NO_SHOW:    'bg-gray-100 text-gray-500',
 }
 
+const NOT_PROVIDED: Record<string, string> = {
+  gender:      'Not provided by patient',
+  dateOfBirth: 'Not provided by patient',
+  phone:       'Not provided by patient',
+  bloodType:   'Not recorded',
+  height:      'Not provided by patient',
+  weight:      'Not provided by patient',
+  allergies:   'No known allergies on record',
+}
+
+function NotProvided({ field }: { field: keyof typeof NOT_PROVIDED }) {
+  return <span className="text-gray-300 italic text-sm">{NOT_PROVIDED[field]}</span>
+}
+
+function bmiLabel(height: number, weight: number) {
+  const bmi = weight / Math.pow(height / 100, 2)
+  const rounded = bmi.toFixed(1)
+  if (bmi < 18.5) return `${rounded} (Underweight)`
+  if (bmi < 25)   return `${rounded} (Normal)`
+  if (bmi < 30)   return `${rounded} (Overweight)`
+  return `${rounded} (Obese)`
+}
+
 export default function PatientsPage() {
   const { data: session } = useSession()
   const role = (session?.user as any)?.role as string | undefined
@@ -71,9 +97,8 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  // Drill-down state
   const [selected, setSelected] = useState<Patient | null>(null)
-  const [activeTab, setActiveTab] = useState<'appointments' | 'records'>('appointments')
+  const [activeTab, setActiveTab] = useState<'history' | 'records'>('history')
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [records, setRecords] = useState<MedicalRecord[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
@@ -89,7 +114,7 @@ export default function PatientsPage() {
 
   async function openPatient(patient: Patient) {
     setSelected(patient)
-    setActiveTab('appointments')
+    setActiveTab('history')
     setDetailLoading(true)
     const [aptRes, recRes] = await Promise.all([
       fetch(`/api/admin/patients/${patient.id}/appointments`),
@@ -106,7 +131,6 @@ export default function PatientsPage() {
     setRecords([])
   }
 
-  // Refresh detail panel after adding a medical record
   async function refreshDetail() {
     if (!selected) return
     const [aptRes, recRes] = await Promise.all([
@@ -145,7 +169,7 @@ export default function PatientsPage() {
         <p className="text-gray-500 text-sm">
           {role === 'ADMIN'
             ? 'All registered patients — click to view appointments and records'
-            : 'Your patients — click to view their appointments and medical records'}
+            : 'Your patients — click to view their history and medical records'}
         </p>
       </div>
 
@@ -212,29 +236,45 @@ export default function PatientsPage() {
                 </div>
 
                 {/* Info grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {[
-                    { icon: UserRound, label: 'Gender', value: patient.gender },
+                    { icon: UserRound, label: 'Gender',       field: 'gender' as const,      value: patient.gender },
                     {
                       icon: Calendar,
                       label: 'Date of Birth',
+                      field: 'dateOfBirth' as const,
                       value: patient.dateOfBirth
                         ? new Date(patient.dateOfBirth).toLocaleDateString('en-US', {
                             year: 'numeric', month: 'short', day: 'numeric',
                           })
                         : null,
                     },
-                    { icon: Phone, label: 'Phone', value: patient.user.phone },
-                    { icon: Droplets, label: 'Blood Type', value: patient.bloodType },
-                  ].map(({ icon: Icon, label, value }) => (
+                    { icon: Phone,    label: 'Phone',      field: 'phone' as const,     value: patient.user.phone },
+                    { icon: Droplets, label: 'Blood Type', field: 'bloodType' as const, value: patient.bloodType },
+                    { icon: Ruler,    label: 'Height',     field: 'height' as const,    value: patient.height != null ? `${patient.height} cm` : null },
+                    { icon: Weight,   label: 'Weight',     field: 'weight' as const,    value: patient.weight != null ? `${patient.weight} kg` : null },
+                  ].map(({ icon: Icon, label, field, value }) => (
                     <div key={label} className="flex items-center gap-2">
                       <Icon className="h-4 w-4 text-gray-300 flex-shrink-0" />
                       <div>
                         <p className="text-xs text-gray-400">{label}</p>
-                        <p className="text-sm font-medium text-gray-700">{value || '—'}</p>
+                        {value
+                          ? <p className="text-sm font-medium text-gray-700">{value}</p>
+                          : <NotProvided field={field} />}
                       </div>
                     </div>
                   ))}
+                </div>
+
+                {/* Allergies row */}
+                <div className="mt-4 pt-4 border-t border-gray-50 flex items-start gap-2">
+                  <ShieldAlert className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs text-gray-400 mb-0.5">Allergies</p>
+                    {patient.allergies
+                      ? <p className="text-sm font-medium text-amber-700">{patient.allergies}</p>
+                      : <p className="text-sm italic text-gray-300">{NOT_PROVIDED.allergies}</p>}
+                  </div>
                 </div>
               </div>
             </div>
@@ -242,16 +282,14 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* Detail Slide-in Panel — now works for both STAFF and ADMIN */}
+      {/* Detail Slide-in Panel */}
       {selected && (
         <>
-          {/* Backdrop */}
           <div
             className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
             onClick={closePanel}
           />
 
-          {/* Panel */}
           <div className="fixed right-0 top-0 h-full w-full max-w-2xl z-50 bg-white shadow-2xl flex flex-col">
 
             {/* Panel Header */}
@@ -269,56 +307,88 @@ export default function PatientsPage() {
                   <p className="text-xs text-gray-400">{selected.user.email}</p>
                 </div>
               </div>
-              <button
-                onClick={closePanel}
-                className="p-2 rounded-xl hover:bg-gray-100 transition"
-              >
+              <button onClick={closePanel} className="p-2 rounded-xl hover:bg-gray-100 transition">
                 <X className="h-5 w-5 text-gray-400" />
               </button>
             </div>
 
             {/* Patient quick-info strip */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-4 text-xs text-gray-500">
-              {selected.gender && (
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 space-y-3">
+
+              {/* Row 1: basic demographics */}
+              <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-500">
                 <span className="flex items-center gap-1">
                   <UserRound className="h-3.5 w-3.5 text-gray-300" />
-                  {selected.gender}
+                  {selected.gender || <span className="italic text-gray-300">{NOT_PROVIDED.gender}</span>}
                 </span>
-              )}
-              {selected.dateOfBirth && (
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5 text-gray-300" />
-                  {new Date(selected.dateOfBirth).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'short', day: 'numeric',
-                  })}
+                  {selected.dateOfBirth
+                    ? new Date(selected.dateOfBirth).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                      })
+                    : <span className="italic text-gray-300">{NOT_PROVIDED.dateOfBirth}</span>}
                 </span>
-              )}
-              {selected.bloodType && (
                 <span className="flex items-center gap-1">
                   <Droplets className="h-3.5 w-3.5 text-gray-300" />
-                  {selected.bloodType}
+                  {selected.bloodType || <span className="italic text-gray-300">{NOT_PROVIDED.bloodType}</span>}
                 </span>
-              )}
-              {selected.user.phone && (
                 <span className="flex items-center gap-1">
                   <Phone className="h-3.5 w-3.5 text-gray-300" />
-                  {selected.user.phone}
+                  {selected.user.phone || <span className="italic text-gray-300">{NOT_PROVIDED.phone}</span>}
                 </span>
-              )}
+              </div>
+
+              {/* Row 2: height / weight / BMI */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white border border-gray-100 rounded-xl px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5 flex items-center gap-1">
+                    <Ruler className="h-3 w-3" /> Height
+                  </p>
+                  {selected.height != null
+                    ? <p className="text-sm font-semibold text-gray-700">{selected.height} cm</p>
+                    : <p className="text-xs italic text-gray-300">{NOT_PROVIDED.height}</p>}
+                </div>
+                <div className="bg-white border border-gray-100 rounded-xl px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5 flex items-center gap-1">
+                    <Weight className="h-3 w-3" /> Weight
+                  </p>
+                  {selected.weight != null
+                    ? <p className="text-sm font-semibold text-gray-700">{selected.weight} kg</p>
+                    : <p className="text-xs italic text-gray-300">{NOT_PROVIDED.weight}</p>}
+                </div>
+                <div className="bg-white border border-gray-100 rounded-xl px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">BMI</p>
+                  {selected.height != null && selected.weight != null
+                    ? <p className="text-sm font-semibold text-gray-700">{bmiLabel(selected.height, selected.weight)}</p>
+                    : <p className="text-xs italic text-gray-300">Not enough data</p>}
+                </div>
+              </div>
+
+              {/* Row 3: allergies */}
+              <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5">
+                <ShieldAlert className="h-3.5 w-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-600 mb-0.5">Allergies</p>
+                  {selected.allergies
+                    ? <p className="text-xs font-medium text-amber-800">{selected.allergies}</p>
+                    : <p className="text-xs italic text-amber-400">{NOT_PROVIDED.allergies}</p>}
+                </div>
+              </div>
             </div>
 
             {/* Tabs */}
             <div className="flex border-b border-gray-100 px-6">
               <button
-                onClick={() => setActiveTab('appointments')}
+                onClick={() => setActiveTab('history')}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition ${
-                  activeTab === 'appointments'
+                  activeTab === 'history'
                     ? 'border-[#2d7a2d] text-[#2d7a2d]'
                     : 'border-transparent text-gray-400 hover:text-gray-600'
                 }`}
               >
-                <Calendar className="h-4 w-4" />
-                Appointments
+                <History className="h-4 w-4" />
+                History
                 <span className="ml-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs">
                   {appointments.length}
                 </span>
@@ -345,11 +415,11 @@ export default function PatientsPage() {
                 <div className="flex items-center justify-center h-40">
                   <p className="text-gray-400 text-sm">Loading...</p>
                 </div>
-              ) : activeTab === 'appointments' ? (
+              ) : activeTab === 'history' ? (
                 appointments.length === 0 ? (
                   <div className="text-center py-12">
-                    <Calendar className="h-10 w-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-gray-400 text-sm">No appointments found</p>
+                    <History className="h-10 w-10 text-gray-200 mx-auto mb-3" />
+                    <p className="text-gray-400 text-sm">No appointment history found</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -387,12 +457,11 @@ export default function PatientsPage() {
                             </p>
                             {apt.medicalRecord && (
                               <span className="ml-2 text-xs text-[#2d7a2d] font-medium">
-                                ✔ Has record
+                                ✓ Has record
                               </span>
                             )}
                           </div>
 
-                          {/* Staff can add medical record directly from this panel */}
                           {role === 'STAFF' &&
                             apt.status === 'COMPLETED' &&
                             !apt.medicalRecord && (

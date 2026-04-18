@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/schedule?staffId=xxx&from=yyyy-mm-dd&to=yyyy-mm-dd
+// staffId is optional for ADMIN (returns all staff slots when omitted)
 export async function GET(request: NextRequest) {
   try {
     const session = await auth()
@@ -15,15 +16,16 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    if (!staffId) {
+    // staffId is required for non-admins; admins can omit it to fetch all staff slots
+    if (!staffId && session.user.role !== 'ADMIN') {
       return NextResponse.json({ error: 'staffId is required' }, { status: 400 })
     }
 
-    const where: any = { staffId }
+    const where: any = staffId ? { staffId } : {}
 
     if (from || to) {
       where.date = {}
-      // ✅ FIX: Parse date strings using UTC to avoid timezone shift
+      // FIX: Parse date strings using UTC to avoid timezone shift
       if (from) {
         const [y, m, d] = from.split('-').map(Number)
         where.date.gte = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0))
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
         const [startHour, startMin] = slot.startTime.split(':').map(Number)
         const [endHour, endMin] = slot.endTime.split(':').map(Number)
 
-        // ✅ FIX: Use setUTCHours so times are applied in UTC, not local time
+        // FIX: Use setUTCHours so times are applied in UTC, not local time
         const slotStart = new Date(slot.date)
         slotStart.setUTCHours(startHour, startMin, 0, 0)
 
@@ -136,7 +138,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ✅ FIX: Parse the date string using UTC to prevent timezone shift
+    // FIX: Parse the date string using UTC to prevent timezone shift
     const [year, month, day] = (date as string).split('-').map(Number)
     const slotDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0))
     const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0))

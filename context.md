@@ -32,6 +32,8 @@ app/
     schedule/me/            → Get current staff's ID
     schedule/slots/         → Available booking slots
     schedule/[id]/          → Update/delete schedule slot (PATCH, DELETE)
+    schedule/requests/      → Schedule requests (GET, POST)
+    schedule/requests/[id]/ → Approve/reject/cancel a schedule request (PATCH)
     settings/               → Clinic settings
     user/                   → User profile, avatar, password, settings
   dashboard/
@@ -42,7 +44,7 @@ app/
     appointments/book/      → Booking flow
     medical-records/
     patients/
-    schedule/               → Staff weekly schedule management
+    schedule/               → Schedule management (role-aware: staff submits requests, admin approves)
     settings/
     users/
   contact/
@@ -53,7 +55,7 @@ app/
   verify/                   → Email verification landing page
 components/
   dashboard/
-    notifications-bell.tsx  → Bell icon with polling (30s), in-app notifications
+    notifications-bell.tsx  → Bell icon with polling (30s), in-app notifications (PATIENT, STAFF, ADMIN)
     sidebar.tsx             → Role-based sidebar nav
   appointments/
     appointment-actions.tsx
@@ -71,13 +73,16 @@ prisma/
 ```
 
 ## Database Schema (Prisma)
-Models: `User`, `UserSettings`, `Patient`, `Staff`, `StaffSchedule`, `Appointment`, `MedicalRecord`, `Announcement`, `AppointmentSettings`, `ClinicSettings`, `NotificationLog`, `AuditLog`, `EmailVerificationToken`
+Models: `User`, `UserSettings`, `Patient`, `Staff`, `StaffSchedule`, `ScheduleRequest`, `Appointment`, `MedicalRecord`, `Announcement`, `AppointmentSettings`, `ClinicSettings`, `NotificationLog`, `AuditLog`, `EmailVerificationToken`
 
 ### Key model notes
 - `User.status` values: `PENDING` (unverified), `ACTIVE`, `SUSPENDED`, `BANNED`, `DELETED`
 - `User.role` values: `PATIENT`, `STAFF`, `ADMIN`
 - `StaffSchedule.date` → stored as UTC midnight of the PHT calendar date
 - `StaffSchedule.startTime` / `endTime` → stored as plain `"HH:mm"` strings in **Philippine Time (PHT)**
+- `ScheduleRequest.date` → stored as UTC midnight of the PHT calendar date (same as StaffSchedule)
+- `ScheduleRequest.startTime` / `endTime` → stored as plain `"HH:mm"` strings in **Philippine Time (PHT)**
+- `ScheduleRequest.status` values: `PENDING`, `APPROVED`, `REJECTED`
 - `Appointment.appointmentDate` → stored in UTC
 - `NotificationLog.channel` values: `APP`, `EMAIL`, `SMS`
 - `NotificationLog.status` values: `PENDING`, `SENT`, `FAILED`, `READ`
@@ -88,7 +93,7 @@ Models: `User`, `UserSettings`, `Patient`, `Staff`, `StaffSchedule`, `Appointmen
 
 The most common bug source is timezone mismatch. Rules:
 - All dates stored in DB are UTC
-- `StaffSchedule.startTime`/`endTime` are PHT strings ("HH:mm") — when querying appointments by time window, always subtract 8 hours (PHT offset) to convert to UTC before querying
+- `StaffSchedule.startTime`/`endTime` and `ScheduleRequest.startTime`/`endTime` are PHT strings ("HH:mm") — when querying appointments by time window, always subtract 8 hours (PHT offset) to convert to UTC before querying
 - All date display must pass `timeZone: 'Asia/Manila'` to `toLocaleDateString` / `toLocaleTimeString`
 - When building UTC query windows from PHT time strings use:
   ```ts
@@ -117,6 +122,7 @@ The most common bug source is timezone mismatch. Rules:
 - `notifications-bell.tsx` polls `GET /api/notifications` every 30 seconds
 - Returns unread APP notifications (`status != 'READ'`)
 - Bell icon shows unread count badge
+- Shown for PATIENT, STAFF, and ADMIN roles
 - Notifications with `subject: 'Appointment Cancelled'` show red `CalendarX` icon
 - Notifications with `subject: 'Appointment Confirmed'` show default bell icon
 - Mark read via `PATCH /api/notifications/[id]` or mark all via `PATCH /api/notifications/read-all`
@@ -135,13 +141,39 @@ The most common bug source is timezone mismatch. Rules:
 | 24h before appointment | ❌ | ✅ (cron) |
 | 1h before appointment | ❌ | ✅ (cron) |
 | Email verification | ❌ | ✅ |
+| Staff submits schedule request | ✅ all admins (in-app only) | ❌ |
+| Admin approves schedule request | ✅ staff | ✅ staff |
+| Admin rejects schedule request | ✅ staff | ✅ staff |
 
 ## Staff Schedule Logic
-- Staff set availability as time windows per day (e.g. "09:00–17:00 on April 14")
-- `slotDuration` determines how many bookable slots fit in the window (e.g. 30min = 16 slots)
-- Once created, slots cannot be edited (only deleted)
+- Staff submit availability requests via the schedule page (date, start time, end time, slot duration)
+- Admin reviews requests in the "Availability Requests" tab and approves or rejects them
+- On approval → a `StaffSchedule` row is created and patients can book that slot
+- On rejection → staff is notified in-app and by email with no reason given
+- Staff can cancel their own PENDING requests before admin acts on them
+- Once a `StaffSchedule` slot is created (approved), it cannot be edited — only deleted
 - Deleting a slot with booked appointments: auto-cancels all `SCHEDULED` appointments in that window, notifies patients (in-app + email), then deletes the slot
 - **Bug that was fixed:** DELETE route was treating PHT time strings as UTC when querying appointments — fixed by applying PHT→UTC offset
+
+## Schedule Request Flow
+1. Staff goes to `/dashboard/schedule` → "My Requests" tab → clicks "Request Availability"
+2. Staff fills in date, start time, end time, slot duration → submits
+3. All admins receive an in-app notification
+4. Admin goes to `/dashboard/schedule` → "Availability Requests" tab → sees pending requests with Approve/Reject buttons
+5. **Approve** → `StaffSchedule` created, request marked `APPROVED`, staff notified in-app + email
+6. **Reject** → request marked `REJECTED`, staff notified in-app + email
+7. Staff can cancel a `PENDING` request at any time before admin acts
+
+## Schedule Page (role-aware)
+`app/dashboard/schedule/page.tsx` renders differently based on role:
+
+### Staff view
+- **"Approved Schedule" tab** — weekly calendar of their own approved slots, with booking fill rates
+- **"My Requests" tab** — list of all their submitted requests with status badges (Pending / Approved / Rejected), cancel button on pending ones, and a "Request Availability" button
+
+### Admin view
+- **"Approved Schedules" tab** — weekly calendar of all staff's approved slots, admin can remove any slot
+- **"Availability Requests" tab** — list of all staff requests, filterable by status and staff member, with Approve/Reject buttons on pending ones. Badge on tab shows pending count.
 
 ## Appointment Cancellation Display
 - `notes` field contains cancellation reason prefixed with `"Cancelled: Staff removed their availability for this time slot"`

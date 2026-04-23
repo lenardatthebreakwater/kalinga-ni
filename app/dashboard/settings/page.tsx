@@ -38,6 +38,8 @@ interface UserProfile {
     dateOfBirth: string | null
     gender: string | null
     bloodType: string | null
+    height: number | null
+    weight: number | null
     allergies: string | null
     emergencyContact: string | null
     emergencyPhone: string | null
@@ -129,7 +131,7 @@ export default function SettingsPage() {
 
   const [profileForm, setProfileForm] = useState({
     firstName: '', lastName: '', phone: '',
-    dateOfBirth: '', gender: '', bloodType: '', allergies: '',
+    dateOfBirth: '', gender: '', bloodType: '', height: '', weight: '', allergies: '',
     emergencyContact: '', emergencyPhone: '',
     specialization: '', licenseNumber: '', department: '',
   })
@@ -190,6 +192,8 @@ export default function SettingsPage() {
         dateOfBirth:      profileData.patient?.dateOfBirth?.split('T')[0] ?? '',
         gender:           profileData.patient?.gender ?? '',
         bloodType:        profileData.patient?.bloodType ?? '',
+        height:           profileData.patient?.height?.toString() ?? '',
+        weight:           profileData.patient?.weight?.toString() ?? '',
         allergies:        profileData.patient?.allergies ?? '',
         emergencyContact: profileData.patient?.emergencyContact ?? '',
         emergencyPhone:   profileData.patient?.emergencyPhone ?? '',
@@ -389,7 +393,7 @@ export default function SettingsPage() {
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       toast.success('Account deleted. Signing out...')
-      await signOut({ redirect: true, redirectUrl: '/' })
+      await signOut({ redirect: true, callbackUrl: '/' })
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete account')
     } finally {
@@ -519,11 +523,19 @@ export default function SettingsPage() {
                             <SelectContent>{GENDERS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                           </Select></div>
                       </div>
-                      <div className="space-y-2"><Label>Blood Type</Label>
-                        <Select value={profileForm.bloodType} onValueChange={(v) => setProfileForm({ ...profileForm, bloodType: v })}>
-                          <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                          <SelectContent>{BLOOD_TYPES.map(bt => <SelectItem key={bt} value={bt}>{bt}</SelectItem>)}</SelectContent>
-                        </Select></div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2"><Label>Blood Type</Label>
+                          <Select value={profileForm.bloodType} onValueChange={(v) => setProfileForm({ ...profileForm, bloodType: v })}>
+                            <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                            <SelectContent>{BLOOD_TYPES.map(bt => <SelectItem key={bt} value={bt}>{bt}</SelectItem>)}</SelectContent>
+                          </Select></div>
+                        <div className="space-y-2"><Label>Height (cm)</Label>
+                          <Input type="number" placeholder="e.g. 170" value={profileForm.height}
+                            onChange={(e) => setProfileForm({ ...profileForm, height: e.target.value })} /></div>
+                        <div className="space-y-2"><Label>Weight (kg)</Label>
+                          <Input type="number" placeholder="e.g. 65" value={profileForm.weight}
+                            onChange={(e) => setProfileForm({ ...profileForm, weight: e.target.value })} /></div>
+                      </div>
                       <div className="space-y-2"><Label>Allergies</Label>
                         <Textarea placeholder="List any known allergies..." value={profileForm.allergies}
                           onChange={(e) => setProfileForm({ ...profileForm, allergies: e.target.value })}

@@ -35,7 +35,7 @@ export default function Sidebar() {
   )
 
   const handleLogout = async () => {
-    await signOut({ redirect: true, redirectUrl: '/' })
+    await signOut({ redirect: true, callbackUrl: '/' })
   }
 
   const roleLabel =

@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertCircle, CalendarCheck, Loader2, User, Calendar, Clock, ChevronRight } from 'lucide-react'
+import { AlertCircle, CalendarCheck, Loader2, User, Calendar, Clock, ChevronRight, Stethoscope } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SPECIALIZATIONS } from '@/lib/specializations'
 
 const REASON_MAX = 300
 
@@ -52,6 +53,9 @@ export default function BookAppointmentPage() {
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null)
   const [reason, setReason] = useState('')
+
+  // Specialization filter for the doctor list
+  const [filterSpec, setFilterSpec] = useState('ALL')
 
   useEffect(() => {
     const fetchStaff = async () => {
@@ -163,6 +167,14 @@ export default function BookAppointmentPage() {
     return `${hour}:${String(m).padStart(2, '0')} ${period}`
   }
 
+  // Derive the unique specializations actually present in the fetched staff list
+  const availableSpecs = Array.from(new Set(staff.map(s => s.specialization))).sort()
+
+  // Filtered doctor list
+  const filteredStaff = filterSpec === 'ALL'
+    ? staff
+    : staff.filter(s => s.specialization === filterSpec)
+
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm">
@@ -241,6 +253,7 @@ export default function BookAppointmentPage() {
                 <span className="font-medium text-gray-800">
                   Dr. {selectedStaff.user.firstName} {selectedStaff.user.lastName}
                 </span>
+                <span className="text-gray-400 text-xs">· {selectedStaff.specialization}</span>
               </span>
             )}
             {selectedDate && (
@@ -290,44 +303,90 @@ export default function BookAppointmentPage() {
                   <p className="text-gray-300 text-xs mt-1">Please check back later.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {staff.map((doctor) => (
-                    <button
-                      key={doctor.id}
-                      onClick={() => {
-                        setSelectedStaff(doctor)
-                        setSelectedDate('')
-                        setSelectedSlot(null)
-                        setStep('date')
-                        setError('')
-                      }}
-                      className="w-full text-left p-4 rounded-xl border border-gray-100 hover:border-[#2d7a2d] hover:bg-[#2d7a2d]/5 transition group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-bold text-[#2d7a2d]">
-                            {doctor.user.firstName[0]}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 text-sm">
-                            Dr. {doctor.user.firstName} {doctor.user.lastName}
-                          </p>
-                          <p className="text-xs text-gray-500">{doctor.specialization}</p>
-                          {doctor.department && (
-                            <p className="text-xs text-gray-400">{doctor.department}</p>
+                <>
+                  {/* Specialization filter */}
+                  {availableSpecs.length > 1 && (
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => setFilterSpec('ALL')}
+                          className={cn(
+                            'px-3 py-1.5 rounded-full text-xs font-medium border transition',
+                            filterSpec === 'ALL'
+                              ? 'bg-[#2d7a2d] text-white border-[#2d7a2d]'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-[#2d7a2d] hover:text-[#2d7a2d]'
                           )}
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-xs text-[#2d7a2d] font-medium">
-                            {doctor.schedules.length} available day{doctor.schedules.length !== 1 ? 's' : ''}
-                          </p>
-                          <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-[#2d7a2d] ml-auto mt-1 transition" />
-                        </div>
+                        >
+                          All
+                        </button>
+                        {availableSpecs.map(spec => (
+                          <button
+                            key={spec}
+                            onClick={() => setFilterSpec(spec)}
+                            className={cn(
+                              'px-3 py-1.5 rounded-full text-xs font-medium border transition',
+                              filterSpec === spec
+                                ? 'bg-[#2d7a2d] text-white border-[#2d7a2d]'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-[#2d7a2d] hover:text-[#2d7a2d]'
+                            )}
+                          >
+                            {spec}
+                          </button>
+                        ))}
                       </div>
-                    </button>
-                  ))}
-                </div>
+                    </div>
+                  )}
+
+                  {filteredStaff.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Stethoscope className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+                      <p className="text-gray-400 text-sm">No doctors available for this specialization.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredStaff.map((doctor) => (
+                        <button
+                          key={doctor.id}
+                          onClick={() => {
+                            setSelectedStaff(doctor)
+                            setSelectedDate('')
+                            setSelectedSlot(null)
+                            setStep('date')
+                            setError('')
+                          }}
+                          className="w-full text-left p-4 rounded-xl border border-gray-100 hover:border-[#2d7a2d] hover:bg-[#2d7a2d]/5 transition group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-[#2d7a2d]/10 flex items-center justify-center flex-shrink-0">
+                              <span className="text-sm font-bold text-[#2d7a2d]">
+                                {doctor.user.firstName[0]}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-gray-800 text-sm">
+                                Dr. {doctor.user.firstName} {doctor.user.lastName}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100 font-medium">
+                                  {doctor.specialization}
+                                </span>
+                                {doctor.department && (
+                                  <span className="text-xs text-gray-400">{doctor.department}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-xs text-[#2d7a2d] font-medium">
+                                {doctor.schedules.length} available day{doctor.schedules.length !== 1 ? 's' : ''}
+                              </p>
+                              <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-[#2d7a2d] ml-auto mt-1 transition" />
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

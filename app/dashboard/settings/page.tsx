@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { SPECIALIZATIONS } from '@/lib/specializations'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -133,6 +134,10 @@ export default function SettingsPage() {
     specialization: '', licenseNumber: '', department: '',
   })
 
+  // Track whether the staff picked "Other" from the dropdown
+  const [specializationMode, setSpecializationMode] = useState<'select' | 'other'>('select')
+  const [otherSpecialization, setOtherSpecialization] = useState('')
+
   const [avatarPreview,   setAvatarPreview]   = useState<string | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingProfile,   setSavingProfile]   = useState(false)
@@ -174,6 +179,10 @@ export default function SettingsPage() {
       setProfile(profileData)
       setSettings(settingsData)
       setAvatarPreview(profileData.image ?? null)
+
+      const savedSpec = profileData.staff?.specialization ?? ''
+      const isKnown   = (SPECIALIZATIONS as readonly string[]).includes(savedSpec)
+
       setProfileForm({
         firstName:        profileData.firstName ?? '',
         lastName:         profileData.lastName ?? '',
@@ -184,10 +193,18 @@ export default function SettingsPage() {
         allergies:        profileData.patient?.allergies ?? '',
         emergencyContact: profileData.patient?.emergencyContact ?? '',
         emergencyPhone:   profileData.patient?.emergencyPhone ?? '',
-        specialization:   profileData.staff?.specialization ?? '',
+        specialization:   isKnown ? savedSpec : 'Other',
         licenseNumber:    profileData.staff?.licenseNumber ?? '',
         department:       profileData.staff?.department ?? '',
       })
+
+      if (savedSpec && !isKnown) {
+        setSpecializationMode('other')
+        setOtherSpecialization(savedSpec)
+      } else {
+        setSpecializationMode(savedSpec === 'Other' ? 'other' : 'select')
+        setOtherSpecialization('')
+      }
 
       if (isAdmin && responses[2]) {
         const adminData = await responses[2].json()
@@ -258,12 +275,26 @@ export default function SettingsPage() {
   }
 
   const handleSaveProfile = async () => {
+    // Resolve the actual specialization value to save
+    const resolvedSpecialization =
+      specializationMode === 'other'
+        ? otherSpecialization.trim()
+        : profileForm.specialization
+
+    if (role === 'STAFF' && !resolvedSpecialization) {
+      toast.error('Please enter your specialization')
+      return
+    }
+
     setSavingProfile(true)
     try {
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profileForm),
+        body: JSON.stringify({
+          ...profileForm,
+          specialization: resolvedSpecialization,
+        }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error) }
       const data = await res.json()
@@ -514,11 +545,43 @@ export default function SettingsPage() {
 
                 {role === 'STAFF' && (
                   <Card className="border-0 shadow-sm rounded-2xl bg-white">
-                    <CardHeader className="pb-2"><CardTitle className="text-base text-gray-800">Professional Information</CardTitle></CardHeader>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base text-gray-800">Professional Information</CardTitle>
+                      <CardDescription>Visible to patients when booking appointments</CardDescription>
+                    </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="space-y-2"><Label>Specialization</Label>
-                        <Input value={profileForm.specialization}
-                          onChange={(e) => setProfileForm({ ...profileForm, specialization: e.target.value })} /></div>
+                      {/* Specialization dropdown */}
+                      <div className="space-y-2">
+                        <Label>Specialization <span className="text-red-500">*</span></Label>
+                        <Select
+                          value={profileForm.specialization}
+                          onValueChange={(v) => {
+                            setProfileForm({ ...profileForm, specialization: v })
+                            setSpecializationMode(v === 'Other' ? 'other' : 'select')
+                            if (v !== 'Other') setOtherSpecialization('')
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select specialization" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SPECIALIZATIONS.map(s => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+
+                        {/* "Other" free-text input */}
+                        {specializationMode === 'other' && (
+                          <Input
+                            placeholder="Please specify your specialization"
+                            value={otherSpecialization}
+                            onChange={(e) => setOtherSpecialization(e.target.value)}
+                            className="mt-2"
+                          />
+                        )}
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2"><Label>License Number</Label>
                           <Input value={profileForm.licenseNumber}

@@ -3,18 +3,19 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Eye, EyeOff, MailCheck } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-  const [submittedEmail, setSubmittedEmail] = useState('')
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -57,6 +58,7 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
+      // Step 1: Create the account
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,9 +81,23 @@ export default function RegisterPage() {
         return
       }
 
-      // Show the "check your email" screen
-      setSubmittedEmail(formData.email)
-      setSubmitted(true)
+      // Step 2: Auto sign in with the credentials they just registered with
+      const result = await signIn('credentials', {
+        email: formData.email,
+        password: formData.password,
+        redirect: false,
+      })
+
+      if (result?.error) {
+        // Account was created but sign in failed — send them to login
+        toast.success('Account created! Please sign in.')
+        router.push('/login')
+        return
+      }
+
+      // Step 3: Redirect to dashboard
+      toast.success('Welcome to Kalinga-ni!')
+      router.push('/dashboard')
     } catch {
       toast.error('An error occurred. Please try again.')
     } finally {
@@ -115,68 +131,6 @@ export default function RegisterPage() {
     </div>
   )
 
-  // ── Check-your-email screen ──────────────────────────────────────────────────
-  if (submitted) {
-    return (
-      <div className="min-h-screen flex">
-        <div className="relative w-full md:w-1/2 flex flex-col items-center justify-center px-8 md:px-16 py-12 bg-white">
-          <div
-            className="absolute inset-0 opacity-[0.04] pointer-events-none"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolygon points='30,5 55,50 5,50' fill='%232d7a2d'/%3E%3C/svg%3E")`,
-              backgroundSize: '60px 60px',
-            }}
-          />
-          <div className="relative w-full max-w-md text-center">
-            <div className="flex flex-col items-center mb-6">
-              <Image src="/logo.jpg" alt="Kalinga-ni Logo" width={90} height={90}
-                className="rounded-xl object-contain mb-3 drop-shadow-md" />
-              <h1 className="text-xl font-bold text-[#2d7a2d] tracking-wide uppercase">Kalinga-ni</h1>
-              <p className="text-xs text-gray-400 mt-1 font-medium tracking-widest uppercase">
-                OPD Online Appointment System
-              </p>
-            </div>
-
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-8">
-              <div className="flex items-center justify-center h-16 w-16 rounded-full bg-green-50 mx-auto mb-4">
-                <MailCheck className="h-9 w-9 text-[#2d7a2d]" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">Check your email</h2>
-              <p className="text-gray-500 text-sm mb-1">
-                We sent a verification link to
-              </p>
-              <p className="font-semibold text-gray-800 text-sm mb-5">{submittedEmail}</p>
-              <p className="text-gray-400 text-xs mb-6">
-                Click the link in the email to activate your account. The link expires in 24 hours.
-                If you don&apos;t see it, check your spam folder.
-              </p>
-
-              <Button
-                onClick={handleSubmit as any}
-                variant="outline"
-                disabled={isLoading}
-                className="w-full h-10 rounded-lg border-gray-200 text-sm text-gray-600"
-                // Re-submitting triggers the resend path on the backend
-                // We just fire the same form data again
-                type="button"
-              >
-                {isLoading ? 'Resending…' : 'Resend verification email'}
-              </Button>
-            </div>
-
-            <div className="mt-6">
-              <Link href="/login" className="text-sm text-gray-400 hover:text-[#2d7a2d] transition">
-                Already verified? Sign in
-              </Link>
-            </div>
-          </div>
-        </div>
-        {panelRight}
-      </div>
-    )
-  }
-
-  // ── Registration form ────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex">
       {/* Left panel — form */}
@@ -333,7 +287,7 @@ export default function RegisterPage() {
               <Button type="submit"
                 className="w-full h-11 bg-[#2d7a2d] hover:bg-[#245f24] text-white font-semibold rounded-lg shadow mt-2"
                 disabled={isLoading}>
-                {isLoading ? 'Creating account…' : 'Create Account'}
+                {isLoading ? 'Creating account...' : 'Create Account'}
               </Button>
             </form>
 

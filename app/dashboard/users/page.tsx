@@ -7,6 +7,7 @@ import {
   Users, ShieldBan, ShieldOff, Trash2, KeyRound,
   ShieldCheck, Search,
 } from 'lucide-react'
+import { SPECIALIZATIONS } from '@/lib/specializations'
 
 type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'DELETED'
 
@@ -19,6 +20,9 @@ type User = {
   role: string
   status: UserStatus
   createdAt: string
+  staff?: {
+    specialization: string
+  } | null
 }
 
 const STATUS_STYLES: Record<UserStatus, string> = {
@@ -40,6 +44,7 @@ export default function UsersPage() {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('ALL')
   const [filterStatus, setFilterStatus] = useState('ALL')
+  const [filterSpecialization, setFilterSpecialization] = useState('ALL')
 
   const [modal, setModal] = useState<{
     type: 'suspend' | 'ban' | 'delete' | 'activate' | 'reset' | null
@@ -92,11 +97,18 @@ export default function UsersPage() {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // Show specialization filter only when viewing STAFF
+  const showSpecFilter = filterRole === 'STAFF' || filterRole === 'ALL'
+
   const filtered = users.filter(u => {
     const matchSearch = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search.toLowerCase())
-    const matchRole = filterRole === 'ALL' || u.role === filterRole
+    const matchRole   = filterRole === 'ALL' || u.role === filterRole
     const matchStatus = filterStatus === 'ALL' || u.status === filterStatus
-    return matchSearch && matchRole && matchStatus
+    const matchSpec   =
+      filterSpecialization === 'ALL' ||
+      u.role !== 'STAFF' ||
+      u.staff?.specialization === filterSpecialization
+    return matchSearch && matchRole && matchStatus && matchSpec
   })
 
   const openModal = (type: typeof modal.type, user: User) => setModal({ type, user })
@@ -138,7 +150,10 @@ export default function UsersPage() {
         </div>
         <select
           value={filterRole}
-          onChange={e => setFilterRole(e.target.value)}
+          onChange={e => {
+            setFilterRole(e.target.value)
+            setFilterSpecialization('ALL')
+          }}
           className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2d7a2d]/30"
         >
           <option value="ALL">All Roles</option>
@@ -157,6 +172,20 @@ export default function UsersPage() {
           <option value="BANNED">Banned</option>
           <option value="DELETED">Deleted</option>
         </select>
+
+        {/* Specialization filter — visible when role is ALL or STAFF */}
+        {showSpecFilter && (
+          <select
+            value={filterSpecialization}
+            onChange={e => setFilterSpecialization(e.target.value)}
+            className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2d7a2d]/30"
+          >
+            <option value="ALL">All Specializations</option>
+            {SPECIALIZATIONS.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Table */}
@@ -177,6 +206,7 @@ export default function UsersPage() {
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Email</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Phone</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Role</th>
+                  <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Specialization</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Status</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Joined</th>
                   <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Actions</th>
@@ -194,6 +224,16 @@ export default function UsersPage() {
                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${ROLE_STYLES[user.role] ?? 'bg-gray-100 text-gray-600'}`}>
                         {user.role}
                       </span>
+                    </td>
+                    <td className="px-5 py-4 text-gray-500">
+                      {user.role === 'STAFF'
+                        ? user.staff?.specialization
+                          ? <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-100">
+                              {user.staff.specialization}
+                            </span>
+                          : <span className="text-gray-300 italic text-xs">Not set</span>
+                        : <span className="text-gray-300">—</span>
+                      }
                     </td>
                     <td className="px-5 py-4">
                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[user.status] ?? ''}`}>
@@ -235,7 +275,6 @@ export default function UsersPage() {
                               Reactivate
                             </button>
                           )}
-                          {/* Reset Password button hidden — functionality preserved below */}
                           {user.status !== 'DELETED' && (
                             <button
                               onClick={() => openModal('delete', user)}
@@ -304,7 +343,6 @@ export default function UsersPage() {
                 </p>
               </>
             )}
-            {/* Reset Password modal — kept intact, triggered programmatically if re-enabled */}
             {modal.type === 'reset' && (
               <>
                 <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center mx-auto mb-4">
